@@ -1,0 +1,50 @@
+# Local/editor state
+.idea/
+.vscode/
+*.log
+*.tmp
+__pycache__/
+*.py[cod]
+
+# Python and dependency environments
+.venv/
+venv/
+env/
+site-packages/
+
+# Large/generated research artifacts
+artifacts/
+autoresearch/runs/
+reports/security-scan-*.md
+reports/supabase-anon-audit-*.md
+tools/security_scan_*.ps1
+tools/supabase_anon_audit.ps1
+tools/*frpc*.ps1
+tools/frp/
+tools/frpc.exe
+tmp_*.py
+
+# Datasets, videos, weights, checkpoints, and model outputs
+datasets/
+Data/
+Videos/
+*.mov
+*.mp4
+*.avi
+*.zip
+*.pt
+*.pth
+*.onnx
+*.engine
+weights/
+runs/
+
+# Third-party cloned paper/code repositories kept locally for reproduction
+papers/
+drone-detecting-drone/
+Fast-and-Robust-UAV-to-UAV-Detection-and-Tracking/
+URAP-UAV-to-UAV-Detection-and-Tracking/
+
+# Paper PDFs are documented by name in doc/*.md but not stored in git
+doc/*.pdf
+doc/_texts/
