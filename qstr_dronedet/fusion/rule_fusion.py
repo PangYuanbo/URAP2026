@@ -65,6 +65,12 @@ def fuse_rule_based(
     hard_tiny_min_support: float = 0.15,
     hard_tiny_score_floor: float = 0.22,
     hard_tiny_allow_tracker_only: bool = False,
+    hard_tiny_require_validated_track: bool = True,
+    hard_tiny_max_track_frames_since_detector: int = 3,
+    hard_tiny_min_track_detector_updates: int = 1,
+    hard_tiny_max_track_drift: float = 48.0,
+    hard_tiny_min_track_history: int = 2,
+    candidate_extra: dict | None = None,
 ) -> RecognitionResult:
     if verified_objectness_mode not in {"always", "hard_recovery"}:
         raise ValueError("verified_objectness_mode must be 'always' or 'hard_recovery'")
@@ -161,6 +167,22 @@ def fuse_rule_based(
         effective_objectness = max(effective_objectness, float(verified_objectness_floor))
         if error_type == "candidate/localization_failure":
             error_type = None
+    extra = candidate_extra or {}
+    track_validated = bool(extra.get("track_validated", False))
+    if tracker_source and not track_validated:
+        try:
+            frames_since_detector = int(extra.get("track_frames_since_detector_update", 999))
+            detector_updates = int(extra.get("track_detector_updates", 0))
+            drift = float(extra.get("track_drift", float("inf")))
+            history_len = int(extra.get("track_history_len", 0))
+            track_validated = (
+                frames_since_detector <= hard_tiny_max_track_frames_since_detector
+                and detector_updates >= hard_tiny_min_track_detector_updates
+                and drift <= hard_tiny_max_track_drift
+                and history_len >= hard_tiny_min_track_history
+            )
+        except (TypeError, ValueError):
+            track_validated = False
     hard_tiny_supported_source = fallback_source or (hard_tiny_allow_tracker_only and tracker_source)
     crop_temporal_drone_mean = 0.5 * (crop["drone"] + temp["drone"])
     crop_temporal_background_mean = 0.5 * (crop["background"] + temp["background"])
@@ -173,7 +195,11 @@ def fuse_rule_based(
         and crop_temporal_artifact_mean <= max(0.35, crop_temporal_drone_mean + hard_tiny_max_bg_minus_drone)
         and feat["background"] <= 0.90
     )
-    hard_tiny_metadata_support = track_score >= hard_tiny_min_support or fallback_source
+    hard_tiny_metadata_support = fallback_source or (
+        tracker_source
+        and track_score >= hard_tiny_min_support
+        and (track_validated or not hard_tiny_require_validated_track)
+    )
     hard_tiny_recovered = (
         hard_tiny_recovery
         and not fallback_rejected

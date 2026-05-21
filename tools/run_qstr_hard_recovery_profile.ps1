@@ -33,6 +33,11 @@ param(
     [double]$HardTinyMinSupport = 0.15,
     [double]$HardTinyScoreFloor = 0.85,
     [switch]$AllowTrackerOnlyHardTinyRecovery,
+    [switch]$DisableTrackValidation,
+    [int]$HardTinyMaxTrackFramesSinceDetector = 3,
+    [int]$HardTinyMinTrackDetectorUpdates = 1,
+    [double]$HardTinyMaxTrackDrift = 48.0,
+    [int]$HardTinyMinTrackHistory = 2,
     [int]$MaxFrames = 0,
     [switch]$EnableMotionCandidates,
     [switch]$SaveVideo
@@ -84,7 +89,11 @@ $ArgsList = @(
     "--hard-tiny-min-temporal-crop-delta", "$HardTinyMinTemporalCropDelta",
     "--hard-tiny-max-bg-minus-drone", "$HardTinyMaxBgMinusDrone",
     "--hard-tiny-min-support", "$HardTinyMinSupport",
-    "--hard-tiny-score-floor", "$HardTinyScoreFloor"
+    "--hard-tiny-score-floor", "$HardTinyScoreFloor",
+    "--hard-tiny-max-track-frames-since-detector", "$HardTinyMaxTrackFramesSinceDetector",
+    "--hard-tiny-min-track-detector-updates", "$HardTinyMinTrackDetectorUpdates",
+    "--hard-tiny-max-track-drift", "$HardTinyMaxTrackDrift",
+    "--hard-tiny-min-track-history", "$HardTinyMinTrackHistory"
 )
 
 if (-not $DisableHardTinyRecovery) {
@@ -92,6 +101,9 @@ if (-not $DisableHardTinyRecovery) {
 }
 if ($AllowTrackerOnlyHardTinyRecovery) {
     $ArgsList += "--hard-tiny-allow-tracker-only"
+}
+if ($DisableTrackValidation) {
+    $ArgsList += "--hard-tiny-disable-track-validation"
 }
 if (-not $EnableMotionCandidates) {
     $ArgsList += "--disable-motion-candidates"

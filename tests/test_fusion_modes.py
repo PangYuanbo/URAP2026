@@ -265,6 +265,12 @@ def test_hard_tiny_recovery_promotes_supported_tracker_background_case():
         hard_tiny_allow_tracker_only=True,
         hard_tiny_min_temporal_crop_delta=0.08,
         hard_tiny_score_floor=0.22,
+        candidate_extra={
+            "track_frames_since_detector_update": 1,
+            "track_detector_updates": 1,
+            "track_drift": 12.0,
+            "track_history_len": 3,
+        },
     )
     assert rec.predicted_class == "drone"
     assert rec.diagnostic_cause == "hard_tiny_recovery"
@@ -308,6 +314,12 @@ def test_hard_tiny_recovery_respects_background_margin():
         hard_tiny_recovery=True,
         hard_tiny_allow_tracker_only=True,
         hard_tiny_min_temporal_crop_delta=0.08,
+        candidate_extra={
+            "track_frames_since_detector_update": 1,
+            "track_detector_updates": 1,
+            "track_drift": 12.0,
+            "track_history_len": 3,
+        },
     )
     assert rec.predicted_class == "background"
     assert rec.diagnostic_cause != "hard_tiny_recovery"
@@ -330,6 +342,12 @@ def test_hard_tiny_recovery_requires_temporal_gain_when_configured():
         hard_tiny_recovery=True,
         hard_tiny_allow_tracker_only=True,
         hard_tiny_min_temporal_crop_delta=0.08,
+        candidate_extra={
+            "track_frames_since_detector_update": 1,
+            "track_detector_updates": 1,
+            "track_drift": 12.0,
+            "track_history_len": 3,
+        },
     )
     assert rec.diagnostic_cause != "hard_tiny_recovery"
 
@@ -352,3 +370,51 @@ def test_hard_tiny_recovery_skips_tracker_only_by_default():
         hard_tiny_min_temporal_crop_delta=0.08,
     )
     assert rec.diagnostic_cause != "hard_tiny_recovery"
+
+
+def test_hard_tiny_recovery_requires_validated_track_metadata():
+    crop = {"drone": 0.43, "background": 0.57}
+    feat = {"unknown": 1.0}
+    temp = {"drone": 0.59, "background": 0.41}
+    stale = fuse_rule_based(
+        0.12,
+        crop,
+        feat,
+        temp,
+        motion_score=0.0,
+        alignment_quality=0.8,
+        track_score=0.2,
+        mode="normal",
+        candidate_source="tracker",
+        hard_tiny_recovery=True,
+        hard_tiny_allow_tracker_only=True,
+        hard_tiny_min_temporal_crop_delta=0.08,
+        candidate_extra={
+            "track_frames_since_detector_update": 8,
+            "track_detector_updates": 1,
+            "track_drift": 12.0,
+            "track_history_len": 4,
+        },
+    )
+    valid = fuse_rule_based(
+        0.12,
+        crop,
+        feat,
+        temp,
+        motion_score=0.0,
+        alignment_quality=0.8,
+        track_score=0.2,
+        mode="normal",
+        candidate_source="tracker",
+        hard_tiny_recovery=True,
+        hard_tiny_allow_tracker_only=True,
+        hard_tiny_min_temporal_crop_delta=0.08,
+        candidate_extra={
+            "track_frames_since_detector_update": 1,
+            "track_detector_updates": 2,
+            "track_drift": 10.0,
+            "track_history_len": 4,
+        },
+    )
+    assert stale.diagnostic_cause != "hard_tiny_recovery"
+    assert valid.diagnostic_cause == "hard_tiny_recovery"

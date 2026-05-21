@@ -426,6 +426,12 @@ def cmd_infer(args: argparse.Namespace) -> None:
                 hard_tiny_min_support=args.hard_tiny_min_support,
                 hard_tiny_score_floor=args.hard_tiny_score_floor,
                 hard_tiny_allow_tracker_only=args.hard_tiny_allow_tracker_only,
+                hard_tiny_require_validated_track=not args.hard_tiny_disable_track_validation,
+                hard_tiny_max_track_frames_since_detector=args.hard_tiny_max_track_frames_since_detector,
+                hard_tiny_min_track_detector_updates=args.hard_tiny_min_track_detector_updates,
+                hard_tiny_max_track_drift=args.hard_tiny_max_track_drift,
+                hard_tiny_min_track_history=args.hard_tiny_min_track_history,
+                candidate_extra=cand.extra,
             )
         )
         return recognitions
@@ -528,7 +534,8 @@ def cmd_infer(args: argparse.Namespace) -> None:
             candidates = prepare_candidates(raw_candidates)
             recognitions = recognize_candidates(candidates)
             fallback_ran = True
-        tracker.update(candidates, alignment_quality=float(motion["best_quality"]))
+        tracker_update_candidates = [c for c in candidates if c.source != "tracker"]
+        tracker.update(tracker_update_candidates, alignment_quality=float(motion["best_quality"]))
         for cand, rec in zip(candidates, recognitions):
             row = {
                 "frame_id": i,
@@ -538,6 +545,14 @@ def cmd_infer(args: argparse.Namespace) -> None:
                 "motion_score": cand.motion_score,
                 "alignment_quality": cand.alignment_quality,
                 "track_score": cand.track_score,
+                "track_id": cand.extra.get("track_id"),
+                "track_age": cand.extra.get("track_age"),
+                "track_history_len": cand.extra.get("track_history_len"),
+                "track_detector_updates": cand.extra.get("track_detector_updates"),
+                "track_last_detector_source": cand.extra.get("track_last_detector_source"),
+                "track_frames_since_detector_update": cand.extra.get("track_frames_since_detector_update"),
+                "track_drift": cand.extra.get("track_drift"),
+                "track_validated": cand.extra.get("track_validated"),
                 "mode": cand.mode,
                 "final_drone_score": rec.final_drone_score,
                 "predicted_class": rec.predicted_class,
@@ -1211,6 +1226,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hard-tiny-min-support", type=float, default=0.15, help="Minimum tracker support unless the candidate source is fallback")
     p.add_argument("--hard-tiny-score-floor", type=float, default=0.22, help="Effective objectness floor for hard-tiny recovered candidates")
     p.add_argument("--hard-tiny-allow-tracker-only", action="store_true", help="Allow hard-tiny recovery for tracker-only candidates; off by default because stale tracks can create many false positives")
+    p.add_argument("--hard-tiny-disable-track-validation", action="store_true", help="Disable track metadata validation for tracker-only hard-tiny recovery")
+    p.add_argument("--hard-tiny-max-track-frames-since-detector", type=int, default=3)
+    p.add_argument("--hard-tiny-min-track-detector-updates", type=int, default=1)
+    p.add_argument("--hard-tiny-max-track-drift", type=float, default=48.0)
+    p.add_argument("--hard-tiny-min-track-history", type=int, default=2)
     p.add_argument("--crop-weights", default=None, help="Optional CropRecognizer .pt weights")
     p.add_argument("--feature-weights", default=None, help="Optional FeatureRecognitionModel .pt weights")
     p.add_argument("--temporal-weights", default=None, help="Optional TemporalRecognizer .pt weights")

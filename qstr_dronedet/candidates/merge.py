@@ -53,12 +53,19 @@ def merge_candidates(candidates: list[DetectionCandidate], iou_threshold: float 
         box = tuple((boxes * weights[:, None]).sum(axis=0) / weights.sum())
         best = max(group, key=lambda g: g.objectness)
         sources = sorted({g.source for g in group})
+        extra = {"merged_sources": sources, "num_merged": len(group), **best.extra}
+        track_member = next((g for g in group if "tracker" in g.source), None)
+        if track_member is not None:
+            for key, value in track_member.extra.items():
+                if key.startswith("track_"):
+                    extra[key] = value
+            if "track_id" in track_member.extra:
+                extra["track_id"] = track_member.extra["track_id"]
         merged.append(
             DetectionCandidate(
                 bbox_xyxy=box, objectness=max(g.objectness for g in group), source="+".join(sources),
                 motion_score=max(g.motion_score for g in group), alignment_quality=max(g.alignment_quality for g in group),
-                track_score=max(g.track_score for g in group), extra={"merged_sources": sources, "num_merged": len(group), **best.extra},
+                track_score=max(g.track_score for g in group), extra=extra,
             )
         )
     return nms_candidates(merged, iou_threshold=0.7)
-

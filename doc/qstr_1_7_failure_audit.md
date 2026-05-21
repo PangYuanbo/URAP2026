@@ -174,3 +174,69 @@ Concrete next step:
   - last detector source
   - track drift from last detector update
 - only allow tracker-only hard-tiny recovery when the track has recent detector support or stable low-drift temporal consistency.
+
+## Tracker Validation Update
+
+Implemented tracker metadata and validation:
+
+- `track_id`
+- `track_age`
+- `track_history_len`
+- `track_detector_updates`
+- `track_last_detector_source`
+- `track_frames_since_detector_update`
+- `track_drift`
+- `track_speed`
+- `track_validated`
+
+Important pipeline fix:
+
+- pure tracker candidates are no longer fed back into `tracker.update`;
+- tracker is updated only by external candidates such as YOLO, fallback, motion, seed, or merged detector+tracker candidates;
+- this prevents a stale tracker prediction from refreshing itself indefinitely.
+
+Hard-tiny recovery now supports tracker-only candidates only when explicitly enabled:
+
+```text
+--hard-tiny-allow-tracker-only
+```
+
+and by default still requires validated track metadata:
+
+```text
+--hard-tiny-max-track-frames-since-detector 3
+--hard-tiny-min-track-detector-updates 1
+--hard-tiny-max-track-drift 48
+--hard-tiny-min-track-history 2
+```
+
+Validation run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\run_qstr_hard_recovery_profile.ps1 `
+  -Video D:\datasets\Anti-UAV300\qstr_heldout_test_visible_10seq\raw_videos\test\visible\20190925_111757_1_7\visible.mp4 `
+  -Out runs\profiles\1_7_failure_audit\hard_tiny_tracker_validated `
+  -Device 0 `
+  -MaxFrames 60 `
+  -AllowTrackerOnlyHardTinyRecovery
+```
+
+Result:
+
+```text
+thr=0.20: TP=0, FP=108, FN=6
+thr=0.22: TP=0, FP=102, FN=6
+thr=0.30: TP=0, FP=18,  FN=6
+```
+
+Interpretation:
+
+- Tracker validation successfully prevents the earlier stale-track recovery explosion.
+- It does not recover `1_7`, because the true target does not form a sufficiently validated track under the current detector/fallback update pattern.
+- The remaining `1_7` bottleneck is now narrower: the correct target needs better detector-supported track initialization or reacquisition, not looser fusion.
+
+Next concrete fix:
+
+- improve tracker association/reacquisition for fallback detections near the tiny GT trajectory;
+- log per-track detector support over time;
+- then re-enable tracker-only hard-tiny recovery only for tracks with recent fallback/YOLO support.
