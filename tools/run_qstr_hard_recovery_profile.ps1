@@ -25,6 +25,14 @@ param(
     [double]$VerifiedMinCropTemporalMean = 0.48,
     [double]$VerifiedMaxNegativeEvidence = 0.62,
     [double]$VerifiedObjectnessFloor = 0.55,
+    [switch]$DisableHardTinyRecovery,
+    [double]$HardTinyMinCropDrone = 0.40,
+    [double]$HardTinyMinTemporalDrone = 0.55,
+    [double]$HardTinyMinTemporalCropDelta = 0.08,
+    [double]$HardTinyMaxBgMinusDrone = 0.08,
+    [double]$HardTinyMinSupport = 0.15,
+    [double]$HardTinyScoreFloor = 0.85,
+    [switch]$AllowTrackerOnlyHardTinyRecovery,
     [int]$MaxFrames = 0,
     [switch]$EnableMotionCandidates,
     [switch]$SaveVideo
@@ -70,9 +78,21 @@ $ArgsList = @(
     "--verified-min-branch-drone", "$VerifiedMinBranchDrone",
     "--verified-min-crop-temporal-mean", "$VerifiedMinCropTemporalMean",
     "--verified-max-negative-evidence", "$VerifiedMaxNegativeEvidence",
-    "--verified-objectness-floor", "$VerifiedObjectnessFloor"
+    "--verified-objectness-floor", "$VerifiedObjectnessFloor",
+    "--hard-tiny-min-crop-drone", "$HardTinyMinCropDrone",
+    "--hard-tiny-min-temporal-drone", "$HardTinyMinTemporalDrone",
+    "--hard-tiny-min-temporal-crop-delta", "$HardTinyMinTemporalCropDelta",
+    "--hard-tiny-max-bg-minus-drone", "$HardTinyMaxBgMinusDrone",
+    "--hard-tiny-min-support", "$HardTinyMinSupport",
+    "--hard-tiny-score-floor", "$HardTinyScoreFloor"
 )
 
+if (-not $DisableHardTinyRecovery) {
+    $ArgsList += "--enable-hard-tiny-recovery"
+}
+if ($AllowTrackerOnlyHardTinyRecovery) {
+    $ArgsList += "--hard-tiny-allow-tracker-only"
+}
 if (-not $EnableMotionCandidates) {
     $ArgsList += "--disable-motion-candidates"
 }

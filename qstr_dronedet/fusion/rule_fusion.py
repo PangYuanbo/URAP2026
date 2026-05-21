@@ -57,6 +57,14 @@ def fuse_rule_based(
     verified_min_crop_temporal_mean: float = 0.48,
     verified_max_negative_evidence: float = 0.62,
     verified_objectness_floor: float = 0.55,
+    hard_tiny_recovery: bool = False,
+    hard_tiny_min_crop_drone: float = 0.40,
+    hard_tiny_min_temporal_drone: float = 0.55,
+    hard_tiny_min_temporal_crop_delta: float = 0.0,
+    hard_tiny_max_bg_minus_drone: float = 0.08,
+    hard_tiny_min_support: float = 0.15,
+    hard_tiny_score_floor: float = 0.22,
+    hard_tiny_allow_tracker_only: bool = False,
 ) -> RecognitionResult:
     if verified_objectness_mode not in {"always", "hard_recovery"}:
         raise ValueError("verified_objectness_mode must be 'always' or 'hard_recovery'")
@@ -153,4 +161,32 @@ def fuse_rule_based(
         effective_objectness = max(effective_objectness, float(verified_objectness_floor))
         if error_type == "candidate/localization_failure":
             error_type = None
+    hard_tiny_supported_source = fallback_source or (hard_tiny_allow_tracker_only and tracker_source)
+    crop_temporal_drone_mean = 0.5 * (crop["drone"] + temp["drone"])
+    crop_temporal_background_mean = 0.5 * (crop["background"] + temp["background"])
+    crop_temporal_artifact_mean = 0.5 * (crop["alignment_artifact"] + temp["alignment_artifact"])
+    hard_tiny_stage_b_support = (
+        crop["drone"] >= hard_tiny_min_crop_drone
+        and temp["drone"] >= hard_tiny_min_temporal_drone
+        and temp["drone"] - crop["drone"] >= hard_tiny_min_temporal_crop_delta
+        and crop_temporal_background_mean - crop_temporal_drone_mean <= hard_tiny_max_bg_minus_drone
+        and crop_temporal_artifact_mean <= max(0.35, crop_temporal_drone_mean + hard_tiny_max_bg_minus_drone)
+        and feat["background"] <= 0.90
+    )
+    hard_tiny_metadata_support = track_score >= hard_tiny_min_support or fallback_source
+    hard_tiny_recovered = (
+        hard_tiny_recovery
+        and not fallback_rejected
+        and hard_tiny_supported_source
+        and hard_tiny_stage_b_support
+        and hard_tiny_metadata_support
+        and final["unknown"] <= 0.45
+    )
+    if hard_tiny_recovered and predicted == "background":
+        predicted = "drone"
+        diagnostic_cause = "hard_tiny_recovery"
+        error_type = None
+        effective_objectness = max(effective_objectness, float(hard_tiny_score_floor))
+    elif hard_tiny_recovered and predicted == "drone" and diagnostic_cause is None:
+        diagnostic_cause = "hard_tiny_recovery"
     return RecognitionResult(crop, feat, temp, final, disagreement, predicted, float(effective_objectness * final["drone"]), error_type, diagnostic_cause)

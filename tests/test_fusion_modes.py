@@ -245,3 +245,110 @@ def test_hard_recovery_verified_objectness_allows_fallback():
         fallback_max_negative_evidence=0.8,
     )
     assert rec.final_drone_score > unverified.final_drone_score
+
+
+def test_hard_tiny_recovery_promotes_supported_tracker_background_case():
+    crop = {"drone": 0.43, "background": 0.57}
+    feat = {"unknown": 1.0}
+    temp = {"drone": 0.59, "background": 0.41}
+    rec = fuse_rule_based(
+        0.12,
+        crop,
+        feat,
+        temp,
+        motion_score=0.0,
+        alignment_quality=0.8,
+        track_score=0.2,
+        mode="normal",
+        candidate_source="tracker",
+        hard_tiny_recovery=True,
+        hard_tiny_allow_tracker_only=True,
+        hard_tiny_min_temporal_crop_delta=0.08,
+        hard_tiny_score_floor=0.22,
+    )
+    assert rec.predicted_class == "drone"
+    assert rec.diagnostic_cause == "hard_tiny_recovery"
+    assert rec.final_drone_score > 0.05
+
+
+def test_hard_tiny_recovery_does_not_promote_plain_yolo():
+    crop = {"drone": 0.43, "background": 0.57}
+    feat = {"unknown": 1.0}
+    temp = {"drone": 0.59, "background": 0.41}
+    rec = fuse_rule_based(
+        0.9,
+        crop,
+        feat,
+        temp,
+        motion_score=0.0,
+        alignment_quality=0.8,
+        track_score=0.0,
+        mode="normal",
+        candidate_source="yolo_tile",
+        hard_tiny_recovery=True,
+        hard_tiny_min_temporal_crop_delta=0.08,
+    )
+    assert rec.diagnostic_cause != "hard_tiny_recovery"
+
+
+def test_hard_tiny_recovery_respects_background_margin():
+    crop = {"drone": 0.41, "background": 0.59}
+    feat = {"background": 1.0}
+    temp = {"drone": 0.56, "background": 0.44}
+    rec = fuse_rule_based(
+        0.2,
+        crop,
+        feat,
+        temp,
+        motion_score=0.0,
+        alignment_quality=0.8,
+        track_score=0.2,
+        mode="normal",
+        candidate_source="tracker",
+        hard_tiny_recovery=True,
+        hard_tiny_allow_tracker_only=True,
+        hard_tiny_min_temporal_crop_delta=0.08,
+    )
+    assert rec.predicted_class == "background"
+    assert rec.diagnostic_cause != "hard_tiny_recovery"
+
+
+def test_hard_tiny_recovery_requires_temporal_gain_when_configured():
+    crop = {"drone": 0.62, "background": 0.38}
+    feat = {"unknown": 1.0}
+    temp = {"drone": 0.64, "background": 0.36}
+    rec = fuse_rule_based(
+        0.12,
+        crop,
+        feat,
+        temp,
+        motion_score=0.0,
+        alignment_quality=0.8,
+        track_score=0.2,
+        mode="normal",
+        candidate_source="tracker",
+        hard_tiny_recovery=True,
+        hard_tiny_allow_tracker_only=True,
+        hard_tiny_min_temporal_crop_delta=0.08,
+    )
+    assert rec.diagnostic_cause != "hard_tiny_recovery"
+
+
+def test_hard_tiny_recovery_skips_tracker_only_by_default():
+    crop = {"drone": 0.43, "background": 0.57}
+    feat = {"unknown": 1.0}
+    temp = {"drone": 0.59, "background": 0.41}
+    rec = fuse_rule_based(
+        0.12,
+        crop,
+        feat,
+        temp,
+        motion_score=0.0,
+        alignment_quality=0.8,
+        track_score=0.2,
+        mode="normal",
+        candidate_source="tracker",
+        hard_tiny_recovery=True,
+        hard_tiny_min_temporal_crop_delta=0.08,
+    )
+    assert rec.diagnostic_cause != "hard_tiny_recovery"

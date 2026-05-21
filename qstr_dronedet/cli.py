@@ -418,6 +418,14 @@ def cmd_infer(args: argparse.Namespace) -> None:
                 verified_min_crop_temporal_mean=args.verified_min_crop_temporal_mean,
                 verified_max_negative_evidence=args.verified_max_negative_evidence,
                 verified_objectness_floor=args.verified_objectness_floor,
+                hard_tiny_recovery=args.enable_hard_tiny_recovery,
+                hard_tiny_min_crop_drone=args.hard_tiny_min_crop_drone,
+                hard_tiny_min_temporal_drone=args.hard_tiny_min_temporal_drone,
+                hard_tiny_min_temporal_crop_delta=args.hard_tiny_min_temporal_crop_delta,
+                hard_tiny_max_bg_minus_drone=args.hard_tiny_max_bg_minus_drone,
+                hard_tiny_min_support=args.hard_tiny_min_support,
+                hard_tiny_score_floor=args.hard_tiny_score_floor,
+                hard_tiny_allow_tracker_only=args.hard_tiny_allow_tracker_only,
             )
         )
         return recognitions
@@ -529,6 +537,7 @@ def cmd_infer(args: argparse.Namespace) -> None:
                 "source": cand.source,
                 "motion_score": cand.motion_score,
                 "alignment_quality": cand.alignment_quality,
+                "track_score": cand.track_score,
                 "mode": cand.mode,
                 "final_drone_score": rec.final_drone_score,
                 "predicted_class": rec.predicted_class,
@@ -1194,6 +1203,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--verified-min-crop-temporal-mean", type=float, default=0.48)
     p.add_argument("--verified-max-negative-evidence", type=float, default=0.62)
     p.add_argument("--verified-objectness-floor", type=float, default=0.55)
+    p.add_argument("--enable-hard-tiny-recovery", action="store_true", help="Allow a narrow fallback/tracker recovery rule when crop+temporal support a tiny drone but fusion still predicts background")
+    p.add_argument("--hard-tiny-min-crop-drone", type=float, default=0.40)
+    p.add_argument("--hard-tiny-min-temporal-drone", type=float, default=0.55)
+    p.add_argument("--hard-tiny-min-temporal-crop-delta", type=float, default=0.0, help="Require temporal drone probability to exceed crop drone probability by this margin")
+    p.add_argument("--hard-tiny-max-bg-minus-drone", type=float, default=0.08)
+    p.add_argument("--hard-tiny-min-support", type=float, default=0.15, help="Minimum tracker support unless the candidate source is fallback")
+    p.add_argument("--hard-tiny-score-floor", type=float, default=0.22, help="Effective objectness floor for hard-tiny recovered candidates")
+    p.add_argument("--hard-tiny-allow-tracker-only", action="store_true", help="Allow hard-tiny recovery for tracker-only candidates; off by default because stale tracks can create many false positives")
     p.add_argument("--crop-weights", default=None, help="Optional CropRecognizer .pt weights")
     p.add_argument("--feature-weights", default=None, help="Optional FeatureRecognitionModel .pt weights")
     p.add_argument("--temporal-weights", default=None, help="Optional TemporalRecognizer .pt weights")
