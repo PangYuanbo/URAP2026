@@ -183,6 +183,7 @@ def fuse_rule_based(
             )
         except (TypeError, ValueError):
             track_validated = False
+    track_recognition_confirmed = bool(extra.get("track_recognition_confirmed", False))
     hard_tiny_supported_source = fallback_source or (hard_tiny_allow_tracker_only and tracker_source)
     crop_temporal_drone_mean = 0.5 * (crop["drone"] + temp["drone"])
     crop_temporal_background_mean = 0.5 * (crop["background"] + temp["background"])
@@ -199,6 +200,7 @@ def fuse_rule_based(
         tracker_source
         and track_score >= hard_tiny_min_support
         and (track_validated or not hard_tiny_require_validated_track)
+        and (track_recognition_confirmed or not hard_tiny_require_validated_track)
     )
     hard_tiny_recovered = (
         hard_tiny_recovery

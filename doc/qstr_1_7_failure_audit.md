@@ -301,3 +301,63 @@ thr=0.30: TP=0, FP=18,  FN=6
 ```
 
 This confirms that raw fallback tracker updates alone do not recover `1_7`.
+
+## QSTR-Track Evidence Buffer V1
+
+Implemented a rule-based QSTR-Track layer:
+
+- ByteTrack-style high/low score association:
+  - high-score candidates update and spawn tracks;
+  - low-score fallback/tiny candidates can update existing tracks in a second association pass;
+  - low-score fallback candidates no longer freely spawn tracks.
+- per-track Stage B evidence history:
+  - crop drone/background mean;
+  - temporal drone/background mean;
+  - final background mean;
+  - temporal-over-crop gain rate;
+  - `track_recognition_confirmed`.
+- tracker-only hard-tiny recovery now requires:
+  - geometric track validation;
+  - track-level recognition confirmation.
+
+Validation run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\run_qstr_hard_recovery_profile.ps1 `
+  -Video D:\datasets\Anti-UAV300\qstr_heldout_test_visible_10seq\raw_videos\test\visible\20190925_111757_1_7\visible.mp4 `
+  -Out runs\profiles\1_7_failure_audit\qstr_track_evidence_v1 `
+  -Device 0 `
+  -MaxFrames 60 `
+  -AllowTrackerOnlyHardTinyRecovery
+```
+
+Result:
+
+```text
+thr=0.20: TP=0, FP=117, FN=6
+thr=0.22: TP=0, FP=113, FN=6
+thr=0.30: TP=0, FP=18,  FN=6
+```
+
+Important per-frame observations:
+
+| frame | best IoU | source | predicted | score | track valid | evidence len | recog confirmed | note |
+|---:|---:|---|---|---:|---|---:|---|---|
+| 10 | 0.593 | tracker | background | 0.137 | false | 5 | true | recognition evidence is good, but geometry validation fails |
+| 50 | 0.595 | tracker | drone | 0.115 | false | 1 | false | score too low and evidence history too short |
+| 55 | 0.000 | tracker | drone | 0.275 | true | 8 | true | wrong track becomes confirmed |
+| 56 | 0.000 | tracker | drone | 0.236 | true | 8 | true | wrong track remains confirmed |
+
+Conclusion:
+
+- QSTR-Track evidence history is now available and usable.
+- It does not solve `1_7` yet because the correct target track and wrong tracks are not separable by the current simple evidence summary.
+- The strongest signal is that correct frame-10 recognition evidence is good but geometry validation fails, while another wrong track has both geometry validation and recognition confirmation.
+
+Next concrete direction:
+
+- use track-level spatial consistency with the detector source itself, not just generic drift:
+  - require the confirmed track to have recent fallback/YOLO detections whose boxes overlap the current tracker box;
+  - maintain per-track detector-supported IoU/center-distance history;
+  - penalize tracks confirmed only by repeated tracker predictions.
+- alternatively move from rule-based track evidence to a small tracklet classifier trained on detector proposals and hard negatives.

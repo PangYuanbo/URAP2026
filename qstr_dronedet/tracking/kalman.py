@@ -21,6 +21,7 @@ class Track:
     last_detector_source: str = ""
     frames_since_detector_update: int = 0
     detector_updates: int = 0
+    evidence_history: list[dict[str, float]] = field(default_factory=list)
 
     def bbox(self) -> tuple[float, float, float, float]:
         cx, cy, w, h, *_ = self.state.tolist()
@@ -37,6 +38,9 @@ class ConstantVelocityTracker:
         fallback_bonus: float = 36.0,
         tiny_bonus: float = 18.0,
         max_spawn_per_frame: int = 12,
+        high_score_threshold: float = 0.25,
+        low_score_threshold: float = 0.05,
+        evidence_window: int = 8,
     ) -> None:
         self.tracks: list[Track] = []
         self.next_id = 1
@@ -47,6 +51,9 @@ class ConstantVelocityTracker:
         self.fallback_bonus = fallback_bonus
         self.tiny_bonus = tiny_bonus
         self.max_spawn_per_frame = max_spawn_per_frame
+        self.high_score_threshold = high_score_threshold
+        self.low_score_threshold = low_score_threshold
+        self.evidence_window = evidence_window
 
     def predict(self) -> None:
         for tr in self.tracks:
@@ -59,14 +66,43 @@ class ConstantVelocityTracker:
 
     def update(self, detections: list[DetectionCandidate], alignment_quality: float = 1.0) -> None:
         self.predict()
-        unmatched = set(range(len(detections)))
-        for tr in self.tracks:
+        high_indices = {i for i, det in enumerate(detections) if self._is_high_score_detection(det)}
+        low_indices = {i for i, det in enumerate(detections) if i not in high_indices and self._is_low_score_recovery_detection(det)}
+        unmatched_high = set(high_indices)
+        unmatched_tracks = self._associate_stage(detections, unmatched_high, list(range(len(self.tracks))), alignment_quality, low_stage=False)
+        unmatched_low = set(low_indices)
+        self._associate_stage(detections, unmatched_low, unmatched_tracks, alignment_quality, low_stage=True)
+        matched = high_indices - unmatched_high
+        low_matched = low_indices - unmatched_low
+        matched_all = matched | low_matched
+        unmatched = set(range(len(detections))) - matched_all
+        spawnable = [detections[j] for j in unmatched if self._can_spawn(detections[j]) and self._is_high_score_detection(detections[j])]
+        spawnable = sorted(spawnable, key=lambda d: (0 if "fallback" in d.source else 1, -d.objectness))
+        for det in spawnable[: self.max_spawn_per_frame]:
+            self._spawn(det)
+        self.tracks = [t for t in self.tracks if t.misses <= 8 and t.confidence > 0.05]
+
+    def _associate_stage(
+        self,
+        detections: list[DetectionCandidate],
+        unmatched_detections: set[int],
+        track_indices: list[int],
+        alignment_quality: float,
+        low_stage: bool,
+    ) -> list[int]:
+        still_unmatched_tracks: list[int] = []
+        for tr_idx in track_indices:
+            if tr_idx >= len(self.tracks):
+                continue
+            tr = self.tracks[tr_idx]
             best_j = None
             best_score = -1e9
             radius_base = self.r0 + self.alpha * self.compute_track_speed(tr) + self.beta * (1.0 - alignment_quality) + self.reacquire * max(0, tr.misses - 1)
-            for j in list(unmatched):
+            for j in list(unmatched_detections):
                 det = detections[j]
                 radius = radius_base + self._association_bonus(det)
+                if low_stage:
+                    radius += 0.5 * self.reacquire
                 dist = center_distance(tr.bbox(), det.bbox_xyxy)
                 if dist > radius:
                     continue
@@ -76,12 +112,28 @@ class ConstantVelocityTracker:
                     best_score, best_j = score, j
             if best_j is not None:
                 self._update_track(tr, detections[best_j])
-                unmatched.remove(best_j)
-        spawnable = [detections[j] for j in unmatched if self._can_spawn(detections[j])]
-        spawnable = sorted(spawnable, key=lambda d: (0 if "fallback" in d.source else 1, -d.objectness))
-        for det in spawnable[: self.max_spawn_per_frame]:
-            self._spawn(det)
-        self.tracks = [t for t in self.tracks if t.misses <= 8 and t.confidence > 0.05]
+                unmatched_detections.remove(best_j)
+            else:
+                still_unmatched_tracks.append(tr_idx)
+        return still_unmatched_tracks
+
+    def _is_high_score_detection(self, det: DetectionCandidate) -> bool:
+        if not self._can_spawn(det):
+            return False
+        if "fallback" in det.source:
+            return det.objectness >= max(0.12, self.low_score_threshold)
+        return det.objectness >= self.high_score_threshold or "oracle" in det.source or "seed" in det.source
+
+    def _is_low_score_recovery_detection(self, det: DetectionCandidate) -> bool:
+        if not self._is_detector_source(det.source):
+            return False
+        if "tracker" in det.source and det.source == "tracker":
+            return False
+        if "fallback" in det.source:
+            return det.objectness >= self.low_score_threshold
+        x1, y1, x2, y2 = det.bbox_xyxy
+        side = max(float(x2 - x1), float(y2 - y1))
+        return side <= 128.0 and det.objectness >= self.low_score_threshold
 
     def _association_bonus(self, det: DetectionCandidate) -> float:
         x1, y1, x2, y2 = det.bbox_xyxy
@@ -176,6 +228,7 @@ class ConstantVelocityTracker:
                         "track_drift": drift,
                         "track_speed": self.compute_track_speed(tr),
                         "track_validated": self.is_validated_track(tr),
+                        **self.track_evidence_summary(tr),
                     },
                 )
             )
@@ -206,6 +259,55 @@ class ConstantVelocityTracker:
             and self.track_drift(track) <= max_drift
             and len(track.history) >= min_history_len
         )
+
+    def update_evidence(
+        self,
+        track_id: int | None,
+        crop_probs: dict[str, float],
+        temporal_probs: dict[str, float],
+        final_probs: dict[str, float],
+    ) -> None:
+        if track_id is None:
+            return
+        for tr in self.tracks:
+            if tr.track_id == int(track_id):
+                tr.evidence_history.append(
+                    {
+                        "crop_drone": float(crop_probs.get("drone", 0.0)),
+                        "crop_background": float(crop_probs.get("background", 0.0)),
+                        "temporal_drone": float(temporal_probs.get("drone", 0.0)),
+                        "temporal_background": float(temporal_probs.get("background", 0.0)),
+                        "final_drone": float(final_probs.get("drone", 0.0)),
+                        "final_background": float(final_probs.get("background", 0.0)),
+                    }
+                )
+                tr.evidence_history = tr.evidence_history[-self.evidence_window :]
+                return
+
+    def track_evidence_summary(self, track: Track) -> dict[str, float | int | bool]:
+        hist = track.evidence_history[-self.evidence_window :]
+        if not hist:
+            return {
+                "track_evidence_len": 0,
+                "track_crop_drone_mean": 0.0,
+                "track_temporal_drone_mean": 0.0,
+                "track_background_mean": 1.0,
+                "track_temporal_gain_rate": 0.0,
+                "track_recognition_confirmed": False,
+            }
+        crop_mean = float(np.mean([e["crop_drone"] for e in hist]))
+        temporal_mean = float(np.mean([e["temporal_drone"] for e in hist]))
+        bg_mean = float(np.mean([max(e["crop_background"], e["temporal_background"], e["final_background"]) for e in hist]))
+        gain_rate = float(np.mean([e["temporal_drone"] > e["crop_drone"] + 0.05 for e in hist]))
+        confirmed = len(hist) >= 2 and temporal_mean >= 0.55 and crop_mean >= 0.38 and bg_mean <= 0.68 and gain_rate >= 0.5
+        return {
+            "track_evidence_len": len(hist),
+            "track_crop_drone_mean": crop_mean,
+            "track_temporal_drone_mean": temporal_mean,
+            "track_background_mean": bg_mean,
+            "track_temporal_gain_rate": gain_rate,
+            "track_recognition_confirmed": confirmed,
+        }
 
     def compute_track_speed(self, track: Track | None = None) -> float:
         if track is None:

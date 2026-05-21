@@ -545,6 +545,9 @@ def cmd_infer(args: argparse.Namespace) -> None:
         tracker_update_candidates = external_raw_candidates + merged_track_updates
         tracker.update(tracker_update_candidates, alignment_quality=float(motion["best_quality"]))
         for cand, rec in zip(candidates, recognitions):
+            if cand.extra.get("track_id") is not None:
+                tracker.update_evidence(cand.extra.get("track_id"), rec.crop_probs, rec.temporal_probs, rec.final_probs)
+        for cand, rec in zip(candidates, recognitions):
             row = {
                 "frame_id": i,
                 "bbox": list(cand.bbox_xyxy),
@@ -561,6 +564,12 @@ def cmd_infer(args: argparse.Namespace) -> None:
                 "track_frames_since_detector_update": cand.extra.get("track_frames_since_detector_update"),
                 "track_drift": cand.extra.get("track_drift"),
                 "track_validated": cand.extra.get("track_validated"),
+                "track_evidence_len": cand.extra.get("track_evidence_len"),
+                "track_crop_drone_mean": cand.extra.get("track_crop_drone_mean"),
+                "track_temporal_drone_mean": cand.extra.get("track_temporal_drone_mean"),
+                "track_background_mean": cand.extra.get("track_background_mean"),
+                "track_temporal_gain_rate": cand.extra.get("track_temporal_gain_rate"),
+                "track_recognition_confirmed": cand.extra.get("track_recognition_confirmed"),
                 "mode": cand.mode,
                 "final_drone_score": rec.final_drone_score,
                 "predicted_class": rec.predicted_class,

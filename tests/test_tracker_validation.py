@@ -59,11 +59,13 @@ def test_fallback_candidate_can_reacquire_with_wider_radius():
     assert "fallback" in cands[0].extra["track_last_detector_source"]
 
 
-def test_low_score_fallback_can_spawn_but_low_motion_cannot():
+def test_low_score_fallback_updates_existing_track_but_does_not_spawn():
     tracker = ConstantVelocityTracker()
+    tracker.update([DetectionCandidate((10, 10, 20, 20), 0.8, "yolo_tile")], alignment_quality=1.0)
+    tracker.update([], alignment_quality=1.0)
     tracker.update(
         [
-            DetectionCandidate((10, 10, 20, 20), 0.09, "yolo_tile_fallback"),
+            DetectionCandidate((12, 10, 22, 20), 0.09, "yolo_tile_fallback"),
             DetectionCandidate((100, 100, 110, 110), 0.09, "motion"),
         ],
         alignment_quality=1.0,
@@ -71,4 +73,45 @@ def test_low_score_fallback_can_spawn_but_low_motion_cannot():
     cands = tracker.get_track_candidates()
 
     assert len(cands) == 1
+    assert cands[0].extra["track_id"] == 1
+    assert cands[0].extra["track_detector_updates"] == 2
     assert "fallback" in cands[0].extra["track_last_detector_source"]
+
+
+def test_track_evidence_summary_confirms_consistent_temporal_support():
+    tracker = ConstantVelocityTracker()
+    tracker.update([DetectionCandidate((10, 10, 20, 20), 0.8, "yolo_tile")], alignment_quality=1.0)
+    track_id = tracker.get_track_candidates()[0].extra["track_id"]
+    tracker.update_evidence(
+        track_id,
+        {"drone": 0.42, "background": 0.58},
+        {"drone": 0.61, "background": 0.39},
+        {"drone": 0.45, "background": 0.50},
+    )
+    tracker.update_evidence(
+        track_id,
+        {"drone": 0.44, "background": 0.56},
+        {"drone": 0.63, "background": 0.37},
+        {"drone": 0.47, "background": 0.48},
+    )
+    cand = tracker.get_track_candidates()[0]
+
+    assert cand.extra["track_evidence_len"] == 2
+    assert cand.extra["track_recognition_confirmed"] is True
+    assert cand.extra["track_temporal_drone_mean"] > cand.extra["track_crop_drone_mean"]
+
+
+def test_track_evidence_summary_rejects_background_heavy_tracklet():
+    tracker = ConstantVelocityTracker()
+    tracker.update([DetectionCandidate((10, 10, 20, 20), 0.8, "yolo_tile")], alignment_quality=1.0)
+    track_id = tracker.get_track_candidates()[0].extra["track_id"]
+    for _ in range(2):
+        tracker.update_evidence(
+            track_id,
+            {"drone": 0.42, "background": 0.58},
+            {"drone": 0.56, "background": 0.44},
+            {"drone": 0.30, "background": 0.75},
+        )
+    cand = tracker.get_track_candidates()[0]
+
+    assert cand.extra["track_recognition_confirmed"] is False
