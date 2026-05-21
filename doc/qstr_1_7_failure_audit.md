@@ -361,3 +361,78 @@ Next concrete direction:
   - maintain per-track detector-supported IoU/center-distance history;
   - penalize tracks confirmed only by repeated tracker predictions.
 - alternatively move from rule-based track evidence to a small tracklet classifier trained on detector proposals and hard negatives.
+
+## Tracklet Classifier MVP
+
+Implemented the next step as a small supervised tracklet classifier rather than another hand-written threshold rule.
+
+New CLI commands:
+
+```text
+python -m qstr_dronedet.cli build-tracklet-dataset --diagnostics ... --gt-csv ... --out ...
+python -m qstr_dronedet.cli train-tracklet-classifier --csv ... --out ...
+python -m qstr_dronedet.cli eval-tracklet-classifier --csv ... --weights ... --out ...
+```
+
+What it does:
+
+- groups candidate diagnostics by `(sequence, track_id)`;
+- labels a tracklet positive if any row matches GT by IoU `>= 0.30` or center distance `<= 24px`;
+- converts each tracklet into compact evidence features:
+  - objectness and final score statistics;
+  - crop / temporal / final drone probabilities;
+  - background evidence;
+  - fallback / detector update rates;
+  - tracker validation, drift, speed, and box size;
+- trains a small CPU/GPU PyTorch MLP to predict `tracklet_is_drone`.
+
+Smoke results:
+
+1. Building from the old single-sequence `qstr_track_evidence_v1` diagnostics produced:
+
+```text
+num_tracklets=40
+positives=0
+negatives=40
+```
+
+This is diagnostic: under that old run, `1_7` did not form any GT-matching tracklet, so classifier training cannot recover it from that artifact alone.
+
+2. Rerunning current hard-recovery code on the first three frozen held-out sequences for 60 frames produced:
+
+```text
+profile=hard_recovery
+gt=18
+pred_drone=275
+TP=10
+FP=265
+FN=8
+precision=0.036
+recall=0.556
+```
+
+The tracklet dataset from those diagnostics was:
+
+```text
+num_tracklets=71
+positives=8
+negatives=63
+```
+
+3. Train-set smoke evaluation on that same 3-sequence dataset:
+
+```text
+TP=6
+FP=10
+FN=2
+TN=53
+precision=0.375
+recall=0.750
+accuracy=0.831
+```
+
+Interpretation:
+
+- This proves the tracklet-level learning path is runnable and more selective than frame-level hard-recovery output.
+- It is not yet a valid held-out result because the smoke classifier was evaluated on its training CSV.
+- The next real experiment should build train/validation tracklet splits from non-frozen train/adaptation sequences, then evaluate once on the frozen 10 sequences.

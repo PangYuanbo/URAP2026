@@ -53,6 +53,11 @@ from qstr_dronedet.real_data import (
     extract_real_annotated_frames,
 )
 from qstr_dronedet.tracking.kalman import ConstantVelocityTracker
+from qstr_dronedet.tracking.tracklet_classifier import (
+    build_tracklet_dataset,
+    evaluate_tracklet_classifier,
+    train_tracklet_classifier,
+)
 from qstr_dronedet.types import CLASSES, AlignmentResult, DetectionCandidate, RecognitionResult, normalize_probs
 from qstr_dronedet.visualization.draw import draw_overlay, make_side_by_side
 
@@ -681,6 +686,28 @@ def cmd_train_yolo_p2(args: argparse.Namespace) -> None:
 
 def cmd_evaluate(args: argparse.Namespace) -> None:
     metrics = evaluate_predictions(args.pred, args.gt, args.out)
+    print(json.dumps(metrics, indent=2))
+
+
+def cmd_build_tracklet_dataset(args: argparse.Namespace) -> None:
+    result = build_tracklet_dataset(
+        args.diagnostics,
+        args.gt_csv,
+        args.out,
+        max_frames=args.max_frames,
+        iou_threshold=args.iou_threshold,
+        center_threshold=args.center_threshold,
+    )
+    print(json.dumps({"csv": str(result.csv_path), "jsonl": str(result.json_path), **result.summary}, indent=2))
+
+
+def cmd_train_tracklet_classifier(args: argparse.Namespace) -> None:
+    out = train_tracklet_classifier(args.csv, args.out, epochs=args.epochs, lr=args.lr, hidden=args.hidden)
+    print(f"Wrote tracklet classifier: {out}")
+
+
+def cmd_eval_tracklet_classifier(args: argparse.Namespace) -> None:
+    metrics = evaluate_tracklet_classifier(args.csv, args.weights, args.out, threshold=args.threshold)
     print(json.dumps(metrics, indent=2))
 
 
@@ -1327,6 +1354,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gt", default=None)
     p.add_argument("--out", required=True)
     p.set_defaults(func=cmd_evaluate)
+
+    p = sub.add_parser("build-tracklet-dataset")
+    p.add_argument("--diagnostics", nargs="+", required=True, help="One or more diagnostics.jsonl files from infer")
+    p.add_argument("--gt-csv", required=True, help="Unified CSV with video_path,frame_id,x1,y1,x2,y2,class,tag")
+    p.add_argument("--out", required=True)
+    p.add_argument("--max-frames", type=int, default=None)
+    p.add_argument("--iou-threshold", type=float, default=0.3)
+    p.add_argument("--center-threshold", type=float, default=24.0)
+    p.set_defaults(func=cmd_build_tracklet_dataset)
+
+    p = sub.add_parser("train-tracklet-classifier")
+    p.add_argument("--csv", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--epochs", type=int, default=50)
+    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--hidden", type=int, default=32)
+    p.set_defaults(func=cmd_train_tracklet_classifier)
+
+    p = sub.add_parser("eval-tracklet-classifier")
+    p.add_argument("--csv", required=True)
+    p.add_argument("--weights", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--threshold", type=float, default=0.5)
+    p.set_defaults(func=cmd_eval_tracklet_classifier)
 
     p = sub.add_parser("stage-b-oracle-benchmark")
     p.add_argument("--metadata", nargs="+", required=True, help="Static-hover JSON metadata files or glob patterns")

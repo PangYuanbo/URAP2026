@@ -100,6 +100,18 @@ powershell -ExecutionPolicy Bypass -File tools\run_qstr_frozen10_profile_benchma
 
 These commands expect local datasets and model weights to exist on the machine. The repo stores scripts and code only, not the datasets or checkpoints.
 
+## Tracklet-Level Recovery MVP
+
+The hard-tiny recovery direction now includes a supervised tracklet classifier. It aggregates `infer` diagnostics by `track_id`, converts each tracklet into objectness, Stage B, fallback, drift, validation, and box-size features, then predicts `tracklet_is_drone`.
+
+```powershell
+python -m qstr_dronedet.cli build-tracklet-dataset --diagnostics runs\...\diagnostics.jsonl --gt-csv D:\datasets\...\qstr_real_boxes.csv --out runs\...\tracklets
+python -m qstr_dronedet.cli train-tracklet-classifier --csv runs\...\tracklets\tracklets.csv --out runs\...\tracklet_mlp.pt
+python -m qstr_dronedet.cli eval-tracklet-classifier --csv runs\...\tracklets\tracklets.csv --weights runs\...\tracklet_mlp.pt --out runs\...\tracklet_eval
+```
+
+This is an MVP, not a frozen benchmark claim. Fit it on train/adaptation sequences, then evaluate once on frozen held-out sequences.
+
 ## Detached Long Runs
 
 Long-running jobs must be launched through the `tools/start_*_detached.ps1` scripts and monitored by matching `tools/monitor_*` scripts. Status reports should be based on PID, output timestamps, progress counters, and GPU signal when relevant.
