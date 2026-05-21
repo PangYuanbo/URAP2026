@@ -1,0 +1,3 @@
+video_path,frame_id,x1,y1,x2,y2,class,tag
+data/real/raw_videos/static_hovering/clip001.mp4,35,612,288,620,296,drone,static_hovering
+data/real/raw_videos/hard_negative/bird001.mp4,80,410,200,418,208,bird,hard_negative

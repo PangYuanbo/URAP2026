@@ -1,0 +1,5 @@
+video_path,scenario,camera_motion,target_motion,notes
+data/real/raw_videos/static_hovering/clip001.mp4,static_hovering,static,hovering_drone,clear sky
+data/real/raw_videos/fast_target/clip002.mp4,fast_target,mostly_static,fast_crossing_drone,sideways pass
+data/real/raw_videos/bad_alignment/clip003.mp4,bad_alignment,handheld_fast_pan,visible_or_tiny_drone,blur/parallax
+data/real/raw_videos/hard_negative/clip004.mp4,hard_negative,static,bird_or_insect,no drone
