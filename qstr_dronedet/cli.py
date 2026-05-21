@@ -37,6 +37,7 @@ from qstr_dronedet.data_augment import (
 )
 from qstr_dronedet.evaluation.metrics import evaluate_predictions
 from qstr_dronedet.evaluation.fusion_calibration import calibrate_fusion_from_diagnostics
+from qstr_dronedet.evaluation.frame_failure_analysis import analyze_frame_failures
 from qstr_dronedet.evaluation.stage_b_benchmark import run_stage_b_oracle_benchmark
 from qstr_dronedet.evaluation.tracker_benchmark import run_tracker_oracle_benchmark
 from qstr_dronedet.features.roi import crop_with_context, extract_temporal_tube
@@ -1241,6 +1242,21 @@ def cmd_calibrate_fusion(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def cmd_analyze_frame_failures(args: argparse.Namespace) -> None:
+    summary = analyze_frame_failures(
+        args.run_root,
+        args.gt,
+        args.out,
+        profile=args.profile,
+        raw_prediction_name=args.raw_prediction_name,
+        filtered_prediction_name=args.filtered_prediction_name,
+        score_threshold=args.score_threshold,
+        iou_threshold=args.iou_threshold,
+        max_frames=args.max_frames,
+    )
+    print(json.dumps(summary, indent=2))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="qstr-dronedet", description="QSTR-DroneDet runnable research MVP")
     sub = parser.add_subparsers(dest="cmd")
@@ -1701,6 +1717,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--frame-tolerance", type=int, default=0, help="Allow nearest GT annotation within this many frames")
     p.set_defaults(func=cmd_calibrate_fusion)
+
+    p = sub.add_parser("analyze-frame-failures")
+    p.add_argument("--run-root", required=True, help="Profile benchmark output root containing hard_recovery/<seq>/predictions*.jsonl")
+    p.add_argument("--gt", required=True, help="QSTR real CSV with video_path,frame_id,x1,y1,x2,y2,class,tag")
+    p.add_argument("--out", required=True)
+    p.add_argument("--profile", default="hard_recovery")
+    p.add_argument("--raw-prediction-name", default="predictions_raw.jsonl")
+    p.add_argument("--filtered-prediction-name", default="predictions.jsonl")
+    p.add_argument("--score-threshold", type=float, default=0.2)
+    p.add_argument("--iou-threshold", type=float, default=0.3)
+    p.add_argument("--max-frames", type=int, default=None)
+    p.set_defaults(func=cmd_analyze_frame_failures)
     return parser
 
 
