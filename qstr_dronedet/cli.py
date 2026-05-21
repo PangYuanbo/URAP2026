@@ -702,7 +702,14 @@ def cmd_build_tracklet_dataset(args: argparse.Namespace) -> None:
 
 
 def cmd_train_tracklet_classifier(args: argparse.Namespace) -> None:
-    out = train_tracklet_classifier(args.csv, args.out, epochs=args.epochs, lr=args.lr, hidden=args.hidden)
+    out = train_tracklet_classifier(
+        args.csv,
+        args.out,
+        epochs=args.epochs,
+        lr=args.lr,
+        hidden=args.hidden,
+        hard_tiny_positive_augments=args.hard_tiny_positive_augments,
+    )
     print(f"Wrote tracklet classifier: {out}")
 
 
@@ -1370,6 +1377,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--hidden", type=int, default=32)
+    p.add_argument("--hard-tiny-positive-augments", type=int, default=0, help="Synthetic hard-tiny positive variants per positive tracklet")
     p.set_defaults(func=cmd_train_tracklet_classifier)
 
     p = sub.add_parser("eval-tracklet-classifier")
