@@ -534,7 +534,15 @@ def cmd_infer(args: argparse.Namespace) -> None:
             candidates = prepare_candidates(raw_candidates)
             recognitions = recognize_candidates(candidates)
             fallback_ran = True
-        tracker_update_candidates = [c for c in candidates if c.source != "tracker"]
+        external_raw_candidates = [
+            c for c in raw_candidates
+            if c.source != "tracker" and not (c.source == "motion" and c.objectness < 0.15)
+        ]
+        merged_track_updates = [
+            c for c in candidates
+            if "tracker" in c.source and c.source != "tracker" and any(s in c.source for s in ("yolo", "fallback", "motion", "seed"))
+        ]
+        tracker_update_candidates = external_raw_candidates + merged_track_updates
         tracker.update(tracker_update_candidates, alignment_quality=float(motion["best_quality"]))
         for cand, rec in zip(candidates, recognitions):
             row = {

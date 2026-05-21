@@ -28,13 +28,25 @@ class Track:
 
 
 class ConstantVelocityTracker:
-    def __init__(self, r0: float = 24.0, alpha: float = 1.5, beta: float = 20.0, reacquire: float = 18.0) -> None:
+    def __init__(
+        self,
+        r0: float = 24.0,
+        alpha: float = 1.5,
+        beta: float = 20.0,
+        reacquire: float = 18.0,
+        fallback_bonus: float = 36.0,
+        tiny_bonus: float = 18.0,
+        max_spawn_per_frame: int = 12,
+    ) -> None:
         self.tracks: list[Track] = []
         self.next_id = 1
         self.r0 = r0
         self.alpha = alpha
         self.beta = beta
         self.reacquire = reacquire
+        self.fallback_bonus = fallback_bonus
+        self.tiny_bonus = tiny_bonus
+        self.max_spawn_per_frame = max_spawn_per_frame
 
     def predict(self) -> None:
         for tr in self.tracks:
@@ -51,21 +63,48 @@ class ConstantVelocityTracker:
         for tr in self.tracks:
             best_j = None
             best_score = -1e9
-            radius = self.r0 + self.alpha * self.compute_track_speed(tr) + self.beta * (1.0 - alignment_quality) + self.reacquire * max(0, tr.misses - 1)
+            radius_base = self.r0 + self.alpha * self.compute_track_speed(tr) + self.beta * (1.0 - alignment_quality) + self.reacquire * max(0, tr.misses - 1)
             for j in list(unmatched):
                 det = detections[j]
+                radius = radius_base + self._association_bonus(det)
                 dist = center_distance(tr.bbox(), det.bbox_xyxy)
                 if dist > radius:
                     continue
-                score = 2.0 * bbox_iou(tr.bbox(), det.bbox_xyxy) - dist / max(radius, 1e-6)
+                source_bonus = 0.15 if "fallback" in det.source else 0.0
+                score = 2.0 * bbox_iou(tr.bbox(), det.bbox_xyxy) - dist / max(radius, 1e-6) + source_bonus
                 if score > best_score:
                     best_score, best_j = score, j
             if best_j is not None:
                 self._update_track(tr, detections[best_j])
                 unmatched.remove(best_j)
-        for j in unmatched:
-            self._spawn(detections[j])
+        spawnable = [detections[j] for j in unmatched if self._can_spawn(detections[j])]
+        spawnable = sorted(spawnable, key=lambda d: (0 if "fallback" in d.source else 1, -d.objectness))
+        for det in spawnable[: self.max_spawn_per_frame]:
+            self._spawn(det)
         self.tracks = [t for t in self.tracks if t.misses <= 8 and t.confidence > 0.05]
+
+    def _association_bonus(self, det: DetectionCandidate) -> float:
+        x1, y1, x2, y2 = det.bbox_xyxy
+        side = max(float(x2 - x1), float(y2 - y1))
+        bonus = 0.0
+        if "fallback" in det.source:
+            bonus += self.fallback_bonus
+        if side <= 128.0:
+            bonus += self.tiny_bonus
+        return bonus
+
+    def _can_spawn(self, det: DetectionCandidate) -> bool:
+        if not self._is_detector_source(det.source):
+            return False
+        if "tracker" in det.source and det.source == "tracker":
+            return False
+        if "fallback" in det.source:
+            return det.objectness >= 0.08
+        if "oracle" in det.source:
+            return True
+        if "motion" in det.source and det.objectness < 0.15:
+            return False
+        return det.objectness >= 0.05
 
     def _spawn(self, det: DetectionCandidate) -> None:
         x1, y1, x2, y2 = det.bbox_xyxy
@@ -75,7 +114,7 @@ class ConstantVelocityTracker:
         self.tracks.append(
             Track(
                 state=state,
-                confidence=max(0.2, det.objectness),
+                confidence=max(0.3 if "fallback" in det.source else 0.2, det.objectness),
                 track_id=self.next_id,
                 history=[center],
                 last_update_center=center,
@@ -145,7 +184,7 @@ class ConstantVelocityTracker:
     @staticmethod
     def _is_detector_source(source: str) -> bool:
         parts = {s for s in source.split("+") if s}
-        return any(("yolo" in s or "motion" in s or "seed" in s or "fallback" in s) for s in parts)
+        return any(("yolo" in s or "motion" in s or "seed" in s or "fallback" in s or "oracle" in s) for s in parts)
 
     def track_drift(self, track: Track) -> float:
         if track.last_detector_center is None:

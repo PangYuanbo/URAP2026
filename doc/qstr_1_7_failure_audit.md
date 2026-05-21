@@ -240,3 +240,64 @@ Next concrete fix:
 - improve tracker association/reacquisition for fallback detections near the tiny GT trajectory;
 - log per-track detector support over time;
 - then re-enable tracker-only hard-tiny recovery only for tracks with recent fallback/YOLO support.
+
+## Tracker Reacquisition V1
+
+Implemented tracker association/reacquisition changes:
+
+- tracker update now uses external raw candidates, not only post-budget merged candidates;
+- raw fallback candidates can spawn/update tracks even when they are not part of the final candidate budget;
+- fallback and tiny candidates receive a wider association radius;
+- low-confidence motion-only candidates are filtered before tracker update;
+- pure tracker candidates still do not refresh the tracker.
+
+Validation run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\run_qstr_hard_recovery_profile.ps1 `
+  -Video D:\datasets\Anti-UAV300\qstr_heldout_test_visible_10seq\raw_videos\test\visible\20190925_111757_1_7\visible.mp4 `
+  -Out runs\profiles\1_7_failure_audit\hard_tiny_reacquire_v1 `
+  -Device 0 `
+  -MaxFrames 60 `
+  -AllowTrackerOnlyHardTinyRecovery
+```
+
+Result:
+
+```text
+thr=0.20: TP=0, FP=114, FN=6
+thr=0.22: TP=0, FP=108, FN=6
+thr=0.30: TP=0, FP=19,  FN=6
+```
+
+Important observations:
+
+- The tracker now forms candidates close to GT on some frames:
+  - frame 10: best IoU `0.593`, tracker candidate, but `track_validated=False`, predicted background.
+  - frame 50: best IoU `0.595`, tracker candidate, predicted drone, but score `0.115`, below operating threshold.
+- Some unrelated tracks also become validated and produce hard-tiny recoveries, so association radius alone is not selective enough.
+
+Conclusion:
+
+- Reacquisition V1 improves track formation but does not solve `1_7`.
+- The next tracker fix should not further widen radius. It should validate tracks using Stage B quality over time:
+  - maintain per-track crop/temporal drone evidence history;
+  - count recent frames where temporal supports drone more than crop/background;
+  - require a track-level recognition consistency score before tracker-only hard-tiny recovery.
+
+Current safe default remains:
+
+- tracker-only hard-tiny recovery off;
+- fallback-only hard-tiny recovery on in hard-recovery profile;
+- stable profile unchanged as the default system profile.
+
+Default hard-recovery after reacquisition V1, with tracker-only recovery still off:
+
+```text
+runs/profiles/1_7_failure_audit/hard_tiny_reacquire_v1_default
+
+thr=0.20: TP=0, FP=111, FN=6
+thr=0.30: TP=0, FP=18,  FN=6
+```
+
+This confirms that raw fallback tracker updates alone do not recover `1_7`.
