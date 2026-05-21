@@ -7,6 +7,14 @@ param(
     [int]$MaxVideos = 0,
     [double]$ScoreThreshold = 0.20,
     [double]$IouThreshold = 0.30,
+    [string]$TrackletClassifierWeights = "",
+    [double]$TrackletClassifierThreshold = 0.5,
+    [ValidateSet("keep", "suppress")]
+    [string]$TrackletFilterUntracked = "keep",
+    [switch]$DisableTrackletPromotion,
+    [double]$TrackletPromotionScoreFloor = 0.22,
+    [double]$TrackletPromotionMinBranchDrone = 0.40,
+    [double]$TrackletPromotionMaxBackground = 0.68,
     [switch]$SkipStable,
     [switch]$SkipHardRecovery
 )
@@ -36,18 +44,44 @@ New-Item -ItemType Directory -Force -Path $OutRoot | Out-Null
 foreach ($VideoFile in $Videos) {
     $SeqName = Split-Path (Split-Path $VideoFile.FullName -Parent) -Leaf
     if (-not $SkipStable) {
-        & (Join-Path $PSScriptRoot "run_qstr_stable_profile.ps1") `
-            -Video $VideoFile.FullName `
-            -Out (Join-Path $OutRoot "stable\$SeqName") `
-            -Device $Device `
-            -MaxFrames $MaxFrames
+        $StableParams = @{
+            Video = $VideoFile.FullName
+            Out = (Join-Path $OutRoot "stable\$SeqName")
+            Device = $Device
+            MaxFrames = $MaxFrames
+        }
+        if ($TrackletClassifierWeights -ne "") {
+            $StableParams["TrackletClassifierWeights"] = $TrackletClassifierWeights
+            $StableParams["TrackletClassifierThreshold"] = $TrackletClassifierThreshold
+            $StableParams["TrackletFilterUntracked"] = $TrackletFilterUntracked
+            $StableParams["TrackletPromotionScoreFloor"] = $TrackletPromotionScoreFloor
+            $StableParams["TrackletPromotionMinBranchDrone"] = $TrackletPromotionMinBranchDrone
+            $StableParams["TrackletPromotionMaxBackground"] = $TrackletPromotionMaxBackground
+            if ($DisableTrackletPromotion) {
+                $StableParams["DisableTrackletPromotion"] = $true
+            }
+        }
+        & (Join-Path $PSScriptRoot "run_qstr_stable_profile.ps1") @StableParams
     }
     if (-not $SkipHardRecovery) {
-        & (Join-Path $PSScriptRoot "run_qstr_hard_recovery_profile.ps1") `
-            -Video $VideoFile.FullName `
-            -Out (Join-Path $OutRoot "hard_recovery\$SeqName") `
-            -Device $Device `
-            -MaxFrames $MaxFrames
+        $HardParams = @{
+            Video = $VideoFile.FullName
+            Out = (Join-Path $OutRoot "hard_recovery\$SeqName")
+            Device = $Device
+            MaxFrames = $MaxFrames
+        }
+        if ($TrackletClassifierWeights -ne "") {
+            $HardParams["TrackletClassifierWeights"] = $TrackletClassifierWeights
+            $HardParams["TrackletClassifierThreshold"] = $TrackletClassifierThreshold
+            $HardParams["TrackletFilterUntracked"] = $TrackletFilterUntracked
+            $HardParams["TrackletPromotionScoreFloor"] = $TrackletPromotionScoreFloor
+            $HardParams["TrackletPromotionMinBranchDrone"] = $TrackletPromotionMinBranchDrone
+            $HardParams["TrackletPromotionMaxBackground"] = $TrackletPromotionMaxBackground
+            if ($DisableTrackletPromotion) {
+                $HardParams["DisableTrackletPromotion"] = $true
+            }
+        }
+        & (Join-Path $PSScriptRoot "run_qstr_hard_recovery_profile.ps1") @HardParams
     }
 }
 
