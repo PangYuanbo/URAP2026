@@ -38,6 +38,14 @@ param(
     [int]$HardTinyMinTrackDetectorUpdates = 1,
     [double]$HardTinyMaxTrackDrift = 48.0,
     [int]$HardTinyMinTrackHistory = 2,
+    [string]$TrackletClassifierWeights = "",
+    [double]$TrackletClassifierThreshold = 0.5,
+    [ValidateSet("keep", "suppress")]
+    [string]$TrackletFilterUntracked = "keep",
+    [switch]$DisableTrackletPromotion,
+    [double]$TrackletPromotionScoreFloor = 0.22,
+    [double]$TrackletPromotionMinBranchDrone = 0.40,
+    [double]$TrackletPromotionMaxBackground = 0.68,
     [int]$MaxFrames = 0,
     [switch]$EnableMotionCandidates,
     [switch]$SaveVideo
@@ -110,6 +118,22 @@ if (-not $EnableMotionCandidates) {
 }
 if ($MaxFrames -gt 0) {
     $ArgsList += @("--max-frames", "$MaxFrames")
+}
+if ($TrackletClassifierWeights -ne "") {
+    if (-not (Test-Path $TrackletClassifierWeights)) {
+        throw "Missing tracklet classifier weights: $TrackletClassifierWeights"
+    }
+    $ArgsList += @(
+        "--tracklet-classifier-weights", $TrackletClassifierWeights,
+        "--tracklet-classifier-threshold", "$TrackletClassifierThreshold",
+        "--tracklet-filter-untracked", $TrackletFilterUntracked,
+        "--tracklet-promotion-score-floor", "$TrackletPromotionScoreFloor",
+        "--tracklet-promotion-min-branch-drone", "$TrackletPromotionMinBranchDrone",
+        "--tracklet-promotion-max-background", "$TrackletPromotionMaxBackground"
+    )
+    if ($DisableTrackletPromotion) {
+        $ArgsList += "--disable-tracklet-promotion"
+    }
 }
 if ($SaveVideo) {
     $ArgsList += "--save-video"

@@ -54,6 +54,7 @@ from qstr_dronedet.real_data import (
 )
 from qstr_dronedet.tracking.kalman import ConstantVelocityTracker
 from qstr_dronedet.tracking.tracklet_classifier import (
+    apply_tracklet_filter_to_infer_outputs,
     build_tracklet_dataset,
     evaluate_tracklet_classifier,
     train_tracklet_classifier,
@@ -597,6 +598,19 @@ def cmd_infer(args: argparse.Namespace) -> None:
         writer.release()
     pred_f.close()
     diag_f.close()
+    if args.tracklet_classifier_weights:
+        summary = apply_tracklet_filter_to_infer_outputs(
+            out / "predictions.jsonl",
+            out / "diagnostics.jsonl",
+        args.tracklet_classifier_weights,
+        threshold=args.tracklet_classifier_threshold,
+        untracked_policy=args.tracklet_filter_untracked,
+        promote_positive_tracklets=not args.disable_tracklet_promotion,
+        promotion_score_floor=args.tracklet_promotion_score_floor,
+        promotion_min_branch_drone=args.tracklet_promotion_min_branch_drone,
+        promotion_max_background=args.tracklet_promotion_max_background,
+    )
+        print(json.dumps(summary, indent=2))
 
 
 def _load_fusion_calibration(path: str | None) -> dict[str, float] | None:
@@ -1288,6 +1302,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--recognition-crop-scale", type=float, default=4.0, help="Context scale for inference crop recognizer crops")
     p.add_argument("--recognition-tube-scale", type=float, default=4.0, help="Context scale for inference temporal tube crops")
     p.add_argument("--fusion-calibration", default=None, help="Optional fusion_calibration_summary.json or {'weights': ...} JSON")
+    p.add_argument("--tracklet-classifier-weights", default=None, help="Optional TrackletMLP .pt checkpoint used as a post-infer filter")
+    p.add_argument("--tracklet-classifier-threshold", type=float, default=0.5)
+    p.add_argument("--tracklet-filter-untracked", choices=["keep", "suppress"], default="keep", help="How to handle drone predictions without a track_id when tracklet filtering is enabled")
+    p.add_argument("--disable-tracklet-promotion", action="store_true", help="Only reject non-drone tracklets; do not promote positive tracklets to drone detections")
+    p.add_argument("--tracklet-promotion-score-floor", type=float, default=0.22)
+    p.add_argument("--tracklet-promotion-min-branch-drone", type=float, default=0.40)
+    p.add_argument("--tracklet-promotion-max-background", type=float, default=0.68)
     p.add_argument("--k-values", nargs="+", type=int, default=[1, 2, 4])
     p.add_argument("--min-area", type=int, default=3)
     p.add_argument("--max-area", type=int, default=5000)

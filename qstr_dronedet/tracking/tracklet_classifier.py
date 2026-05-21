@@ -67,6 +67,16 @@ class TrackletMLP(torch.nn.Module):
         return self.net(x)
 
 
+def _load_checkpoint(weights: str | Path) -> tuple[TrackletMLP, list[str], torch.Tensor, torch.Tensor]:
+    ckpt = torch.load(weights, map_location="cpu")
+    features = list(ckpt.get("features", TRACKLET_FEATURES))
+    hidden = int(ckpt.get("hidden", ckpt["state_dict"]["net.0.weight"].shape[0]))
+    model = TrackletMLP(in_dim=len(features), hidden=hidden)
+    model.load_state_dict(ckpt["state_dict"])
+    model.eval()
+    return model, features, ckpt["mean"], ckpt["std"].clamp_min(1e-6)
+
+
 def _load_jsonl(path: str | Path) -> list[dict[str, Any]]:
     rows = []
     with Path(path).open("r", encoding="utf-8") as f:
@@ -240,6 +250,157 @@ def build_tracklet_dataset(
     return TrackletDatasetResult(csv_path, json_path, summary)
 
 
+def score_tracklets_from_rows(rows: list[dict[str, Any]], weights: str | Path, threshold: float = 0.5) -> dict[str, dict[str, Any]]:
+    tracklets: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        key = _row_track_key(row)
+        if key is None:
+            continue
+        tracklets.setdefault(key, []).append(row)
+    if not tracklets:
+        return {}
+
+    model, features, mean, std = _load_checkpoint(weights)
+    ordered = []
+    matrix = []
+    for track_id, track_rows in sorted(tracklets.items(), key=lambda kv: kv[0]):
+        feats = _features(track_rows)
+        ordered.append((track_id, feats, len(track_rows)))
+        matrix.append([float(feats.get(k, 0.0)) for k in features])
+    x = torch.tensor(matrix, dtype=torch.float32)
+    with torch.no_grad():
+        probs = torch.softmax(model((x - mean) / std), dim=1)[:, 1].tolist()
+    scores: dict[str, dict[str, Any]] = {}
+    for (track_id, feats, n), prob in zip(ordered, probs):
+        scores[track_id] = {
+            "prob_tracklet_drone": float(prob),
+            "tracklet_is_drone": bool(prob >= threshold),
+            "num_rows": n,
+            "features": feats,
+        }
+    return scores
+
+
+def _append_cause(cause: Any, value: str) -> str:
+    if cause is None or cause == "":
+        return value
+    text = str(cause)
+    if value in text.split("+"):
+        return text
+    return f"{text}+{value}"
+
+
+def apply_tracklet_filter_to_infer_outputs(
+    predictions_path: str | Path,
+    diagnostics_path: str | Path,
+    weights: str | Path,
+    threshold: float = 0.5,
+    untracked_policy: str = "keep",
+    promote_positive_tracklets: bool = True,
+    promotion_score_floor: float = 0.22,
+    promotion_min_branch_drone: float = 0.40,
+    promotion_max_background: float = 0.68,
+) -> dict[str, Any]:
+    pred_path = Path(predictions_path)
+    diag_path = Path(diagnostics_path)
+    pred_rows = _load_jsonl(pred_path)
+    diag_rows = _load_jsonl(diag_path)
+    scores = score_tracklets_from_rows(diag_rows, weights, threshold=threshold)
+
+    def update_row(row: dict[str, Any]) -> dict[str, Any]:
+        out = dict(row)
+        track_id = _row_track_key(out)
+        score = scores.get(track_id) if track_id is not None else None
+        if score is None:
+            out["tracklet_classifier_prob"] = None
+            out["tracklet_is_drone"] = None
+            out["tracklet_filter_applied"] = bool(untracked_policy == "suppress" and out.get("predicted_class") == "drone")
+            if untracked_policy == "suppress" and out.get("predicted_class") == "drone":
+                out["raw_predicted_class"] = out.get("predicted_class")
+                out["raw_final_drone_score"] = out.get("final_drone_score")
+                out["predicted_class"] = "background"
+                out["final_drone_score"] = 0.0
+                out["diagnostic_cause"] = _append_cause(out.get("diagnostic_cause"), "tracklet_untracked_rejected")
+            return out
+
+        is_drone = bool(score["tracklet_is_drone"])
+        out["tracklet_classifier_prob"] = score["prob_tracklet_drone"]
+        out["tracklet_is_drone"] = is_drone
+        out["tracklet_filter_applied"] = bool(out.get("predicted_class") == "drone")
+        if out.get("predicted_class") == "drone" and not is_drone:
+            out["raw_predicted_class"] = out.get("predicted_class")
+            out["raw_final_drone_score"] = out.get("final_drone_score")
+            out["predicted_class"] = "background"
+            out["final_drone_score"] = 0.0
+            probs = dict(out.get("final_probs") or {})
+            probs["drone"] = min(float(probs.get("drone", 0.0)), float(score["prob_tracklet_drone"]))
+            probs["background"] = max(float(probs.get("background", 0.0)), 1.0 - float(score["prob_tracklet_drone"]))
+            out["final_probs"] = probs
+            out["diagnostic_cause"] = _append_cause(out.get("diagnostic_cause"), "tracklet_rejected")
+        elif out.get("predicted_class") == "drone" and is_drone:
+            out["raw_final_drone_score"] = out.get("final_drone_score")
+            out["final_drone_score"] = max(float(out.get("final_drone_score", 0.0)), promotion_score_floor * float(score["prob_tracklet_drone"]))
+            out["diagnostic_cause"] = _append_cause(out.get("diagnostic_cause"), "tracklet_confirmed")
+        elif promote_positive_tracklets and is_drone:
+            crop_drone = _prob(out, "crop_probs", "drone")
+            temporal_drone = _prob(out, "temporal_probs", "drone")
+            final_drone = _prob(out, "final_probs", "drone")
+            background = max(_prob(out, "crop_probs", "background"), _prob(out, "temporal_probs", "background"), _prob(out, "final_probs", "background"))
+            feats = score.get("features", {})
+            tracklet_branch_drone = max(
+                float(feats.get("mean_crop_drone", 0.0)),
+                float(feats.get("mean_temporal_drone", 0.0)),
+                float(feats.get("mean_final_drone", 0.0)),
+            )
+            tracklet_background = float(feats.get("mean_background", 1.0))
+            branch_drone = max(crop_drone, temporal_drone, final_drone, tracklet_branch_drone)
+            effective_background = min(background if background > 0 else 1.0, tracklet_background)
+            if branch_drone >= promotion_min_branch_drone and effective_background <= promotion_max_background:
+                out["raw_predicted_class"] = out.get("predicted_class")
+                out["raw_final_drone_score"] = out.get("final_drone_score")
+                out["predicted_class"] = "drone"
+                out["final_drone_score"] = max(float(out.get("final_drone_score", 0.0)), promotion_score_floor * float(score["prob_tracklet_drone"]))
+                out["diagnostic_cause"] = _append_cause(out.get("diagnostic_cause"), "tracklet_promoted")
+        return out
+
+    filtered_pred_rows = [update_row(row) for row in pred_rows]
+    filtered_diag_rows = [update_row(row) for row in diag_rows]
+
+    raw_pred_path = pred_path.with_name("predictions_raw.jsonl")
+    raw_diag_path = diag_path.with_name("diagnostics_raw.jsonl")
+    pred_path.replace(raw_pred_path)
+    diag_path.replace(raw_diag_path)
+    with pred_path.open("w", encoding="utf-8") as f:
+        for row in filtered_pred_rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    with diag_path.open("w", encoding="utf-8") as f:
+        for row in filtered_diag_rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    raw_drone = sum(1 for row in pred_rows if row.get("predicted_class") == "drone")
+    filtered_drone = sum(1 for row in filtered_pred_rows if row.get("predicted_class") == "drone")
+    rejected = raw_drone - filtered_drone
+    summary = {
+        "weights": str(weights),
+        "threshold": threshold,
+        "untracked_policy": untracked_policy,
+        "promote_positive_tracklets": promote_positive_tracklets,
+        "promotion_score_floor": promotion_score_floor,
+        "promotion_min_branch_drone": promotion_min_branch_drone,
+        "promotion_max_background": promotion_max_background,
+        "num_tracklets": len(scores),
+        "raw_drone_predictions": raw_drone,
+        "filtered_drone_predictions": filtered_drone,
+        "rejected_drone_predictions": rejected,
+        "raw_predictions_path": str(raw_pred_path),
+        "raw_diagnostics_path": str(raw_diag_path),
+        "predictions_path": str(pred_path),
+        "diagnostics_path": str(diag_path),
+    }
+    (pred_path.parent / "tracklet_filter_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return summary
+
+
 def _coerce_feature(row: dict[str, str], key: str) -> float:
     value = row.get(key, "")
     if value == "":
@@ -366,14 +527,9 @@ def train_tracklet_classifier(
 
 
 def evaluate_tracklet_classifier(csv_path: str | Path, weights: str | Path, out: str | Path | None = None, threshold: float = 0.5) -> dict[str, Any]:
-    ckpt = torch.load(weights, map_location="cpu")
-    features = list(ckpt.get("features", TRACKLET_FEATURES))
+    model, features, mean, std = _load_checkpoint(weights)
     x, y, meta = _load_tracklet_csv(csv_path, features=features)
-    hidden = int(ckpt.get("hidden", ckpt["state_dict"]["net.0.weight"].shape[0]))
-    model = TrackletMLP(in_dim=len(features), hidden=hidden)
-    model.load_state_dict(ckpt["state_dict"])
-    model.eval()
-    x_norm = (x - ckpt["mean"]) / ckpt["std"].clamp_min(1e-6)
+    x_norm = (x - mean) / std
     with torch.no_grad():
         probs = torch.softmax(model(x_norm), dim=1)[:, 1]
     pred = probs >= threshold
