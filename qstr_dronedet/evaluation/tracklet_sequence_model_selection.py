@@ -144,6 +144,7 @@ def run_tracklet_sequence_model_selection(
     epochs_values: list[int] | None = None,
     hidden_values: list[int] | None = None,
     max_len_values: list[int] | None = None,
+    hard_positive_augments_values: list[int] | None = None,
     hard_negative_augments_values: list[int] | None = None,
     classifier_thresholds: list[float] | None = None,
     promotion_enabled_values: list[bool] | None = None,
@@ -168,6 +169,7 @@ def run_tracklet_sequence_model_selection(
     epochs_values = epochs_values or [30]
     hidden_values = hidden_values or [32]
     max_len_values = max_len_values or [12, 24]
+    hard_positive_augments_values = hard_positive_augments_values or [0]
     hard_negative_augments_values = hard_negative_augments_values or [0, 2]
     classifier_thresholds = classifier_thresholds or [0.5, 0.7, 0.85]
     promotion_enabled_values = promotion_enabled_values if promotion_enabled_values is not None else [False, True]
@@ -181,72 +183,75 @@ def run_tracklet_sequence_model_selection(
     for epochs in epochs_values:
         for hidden in hidden_values:
             for max_len in max_len_values:
-                for hard_neg_aug in hard_negative_augments_values:
-                    candidate_id += 1
-                    ckpt = out_dir / "checkpoints" / f"tracklet_sequence_candidate_{candidate_id:03d}.pt"
-                    train_tracklet_sequence_classifier(
-                        train_jsonl,
-                        ckpt,
-                        epochs=epochs,
-                        hidden=hidden,
-                        max_len=max_len,
-                        hard_negative_augments=hard_neg_aug,
-                    )
-                    for threshold in classifier_thresholds:
-                        for promote in promotion_enabled_values:
-                            floors = promotion_score_floors if promote else [0.0]
-                            backgrounds = promotion_max_backgrounds if promote else [0.0]
-                            budgets = selective_max_promoted_tracklets_per_sequence_values if (promote and selective_promotion) else [0]
-                            for floor in floors:
-                                for max_bg in backgrounds:
-                                    for budget in budgets:
-                                        ev = _evaluate_sequence_checkpoint(
-                                            run_roots,
-                                            gt_csv,
-                                            ckpt,
-                                            profile=profile,
-                                            allowed_sequences=calib_sequences,
-                                            classifier_threshold=threshold,
-                                            promotion_enabled=promote,
-                                            promotion_score_floor=floor,
-                                            promotion_max_background=max_bg,
-                                            selective_promotion=selective_promotion,
-                                            selective_max_promoted_tracklets_per_sequence=budget,
-                                            score_threshold=score_threshold,
-                                            iou_threshold=iou_threshold,
-                                            max_frames=max_frames,
-                                        )
-                                        metrics = ev["filtered"]
-                                        raw = ev["raw"]
-                                        rows.append(
-                                            {
-                                                "candidate_id": candidate_id,
-                                                "weights": str(ckpt),
-                                                "epochs": epochs,
-                                                "hidden": hidden,
-                                                "max_len": max_len,
-                                                "hard_negative_augments": hard_neg_aug,
-                                                "classifier_threshold": threshold,
-                                                "promotion_enabled": int(promote),
-                                                "promotion_score_floor": floor,
-                                                "promotion_max_background": max_bg,
-                                                "selective_promotion": int(bool(promote and selective_promotion)),
-                                                "selective_max_promoted_tracklets_per_sequence": budget,
-                                                **metrics,
-                                                "raw_tp": raw["tp"],
-                                                "raw_fp": raw["fp"],
-                                                "raw_fn": raw["fn"],
-                                                "raw_precision": raw["precision"],
-                                                "raw_recall": raw["recall"],
-                                                "delta_tp": ev["delta_tp"],
-                                                "delta_fp": ev["delta_fp"],
-                                                "delta_recall": ev["delta_recall"],
-                                                "delta_precision": ev["delta_precision"],
-                                                "filtered_drone_predictions_pre_score": ev["filter_summary"]["filtered_drone_predictions"],
-                                                "rejected_drone_predictions_pre_score": ev["filter_summary"]["rejected_drone_predictions"],
-                                                "promoted_drone_predictions_pre_score": ev["filter_summary"]["promoted_drone_predictions"],
-                                            }
-                                        )
+                for hard_pos_aug in hard_positive_augments_values:
+                    for hard_neg_aug in hard_negative_augments_values:
+                        candidate_id += 1
+                        ckpt = out_dir / "checkpoints" / f"tracklet_sequence_candidate_{candidate_id:03d}.pt"
+                        train_tracklet_sequence_classifier(
+                            train_jsonl,
+                            ckpt,
+                            epochs=epochs,
+                            hidden=hidden,
+                            max_len=max_len,
+                            hard_positive_augments=hard_pos_aug,
+                            hard_negative_augments=hard_neg_aug,
+                        )
+                        for threshold in classifier_thresholds:
+                            for promote in promotion_enabled_values:
+                                floors = promotion_score_floors if promote else [0.0]
+                                backgrounds = promotion_max_backgrounds if promote else [0.0]
+                                budgets = selective_max_promoted_tracklets_per_sequence_values if (promote and selective_promotion) else [0]
+                                for floor in floors:
+                                    for max_bg in backgrounds:
+                                        for budget in budgets:
+                                            ev = _evaluate_sequence_checkpoint(
+                                                run_roots,
+                                                gt_csv,
+                                                ckpt,
+                                                profile=profile,
+                                                allowed_sequences=calib_sequences,
+                                                classifier_threshold=threshold,
+                                                promotion_enabled=promote,
+                                                promotion_score_floor=floor,
+                                                promotion_max_background=max_bg,
+                                                selective_promotion=selective_promotion,
+                                                selective_max_promoted_tracklets_per_sequence=budget,
+                                                score_threshold=score_threshold,
+                                                iou_threshold=iou_threshold,
+                                                max_frames=max_frames,
+                                            )
+                                            metrics = ev["filtered"]
+                                            raw = ev["raw"]
+                                            rows.append(
+                                                {
+                                                    "candidate_id": candidate_id,
+                                                    "weights": str(ckpt),
+                                                    "epochs": epochs,
+                                                    "hidden": hidden,
+                                                    "max_len": max_len,
+                                                    "hard_positive_augments": hard_pos_aug,
+                                                    "hard_negative_augments": hard_neg_aug,
+                                                    "classifier_threshold": threshold,
+                                                    "promotion_enabled": int(promote),
+                                                    "promotion_score_floor": floor,
+                                                    "promotion_max_background": max_bg,
+                                                    "selective_promotion": int(bool(promote and selective_promotion)),
+                                                    "selective_max_promoted_tracklets_per_sequence": budget,
+                                                    **metrics,
+                                                    "raw_tp": raw["tp"],
+                                                    "raw_fp": raw["fp"],
+                                                    "raw_fn": raw["fn"],
+                                                    "raw_precision": raw["precision"],
+                                                    "raw_recall": raw["recall"],
+                                                    "delta_tp": ev["delta_tp"],
+                                                    "delta_fp": ev["delta_fp"],
+                                                    "delta_recall": ev["delta_recall"],
+                                                    "delta_precision": ev["delta_precision"],
+                                                    "filtered_drone_predictions_pre_score": ev["filter_summary"]["filtered_drone_predictions"],
+                                                    "rejected_drone_predictions_pre_score": ev["filter_summary"]["rejected_drone_predictions"],
+                                                    "promoted_drone_predictions_pre_score": ev["filter_summary"]["promoted_drone_predictions"],
+                                                }
+                                            )
 
     raw_recall = float(rows[0]["raw_recall"])
     raw_precision = float(rows[0]["raw_precision"])

@@ -97,7 +97,14 @@ def _load_tracklet_jsonl(path: str | Path) -> list[SequenceSample]:
                 continue
             item = json.loads(line)
             meta = item.get("meta") or {}
-            rows = item.get("rows") or []
+            rows = []
+            for row in item.get("rows") or []:
+                enriched = dict(row)
+                if "bucket" in meta and "bucket" not in enriched:
+                    enriched["bucket"] = meta["bucket"]
+                if "dataset_source" in meta and "dataset_source" not in enriched:
+                    enriched["dataset_source"] = meta["dataset_source"]
+                rows.append(enriched)
             samples.append(
                 SequenceSample(
                     seq=str(meta.get("seq", "")),
@@ -208,6 +215,82 @@ def _augment_hard_negative_samples(samples: list[SequenceSample], repeats: int) 
     return out
 
 
+def _set_prob(row: dict[str, Any], branch: str, key: str, value: float) -> None:
+    probs = dict(row.get(branch) or {})
+    probs[key] = float(max(0.0, min(1.0, value)))
+    row[branch] = probs
+
+
+def _is_hard_positive_sample(sample: SequenceSample) -> bool:
+    if sample.label != 1:
+        return False
+    feats = _features(sample.rows)
+    bucket = ""
+    if sample.rows:
+        bucket = str((sample.rows[0].get("bucket") or ""))
+    mean_side = float(feats.get("mean_box_side", 999.0))
+    max_objectness = float(feats.get("max_objectness", 1.0))
+    fallback_rate = float(feats.get("fallback_rate", 0.0))
+    weak_temporal = float(feats.get("weak_detector_temporal_signal", 0.0))
+    num_rows = float(feats.get("num_rows", 999.0))
+    return (
+        "hard" in bucket
+        or mean_side <= 64.0
+        or max_objectness <= 0.35
+        or fallback_rate > 0.0
+        or weak_temporal > 0.03
+        or num_rows <= 3
+    )
+
+
+def _degrade_positive_rows(rows: list[dict[str, Any]], severity: float) -> list[dict[str, Any]]:
+    degraded: list[dict[str, Any]] = []
+    for row in rows:
+        out = dict(row)
+        out["objectness"] = min(float(out.get("objectness", 0.0)), 0.10 + 0.10 * severity)
+        out["final_drone_score"] = min(float(out.get("final_drone_score", 0.0)), 0.08 + 0.10 * severity)
+        crop = _prob(out, "crop_probs", "drone")
+        feature = _prob(out, "feature_probs", "drone")
+        temporal = _prob(out, "temporal_probs", "drone")
+        final = _prob(out, "final_probs", "drone")
+        background = max(_prob(out, "crop_probs", "background"), _prob(out, "temporal_probs", "background"), _prob(out, "final_probs", "background"))
+        crop = min(crop, 0.38 + 0.04 * severity)
+        feature = min(feature, 0.35 + 0.04 * severity)
+        temporal = max(min(0.72, temporal), crop + 0.10, 0.50 + 0.06 * severity)
+        final = min(final, 0.34 + 0.06 * severity)
+        background = min(0.72, max(background, 0.48 + 0.04 * severity))
+        _set_prob(out, "crop_probs", "drone", crop)
+        _set_prob(out, "feature_probs", "drone", feature)
+        _set_prob(out, "temporal_probs", "drone", temporal)
+        _set_prob(out, "final_probs", "drone", final)
+        _set_prob(out, "crop_probs", "background", max(_prob(out, "crop_probs", "background"), background - 0.06))
+        _set_prob(out, "temporal_probs", "background", max(_prob(out, "temporal_probs", "background"), background - 0.12))
+        _set_prob(out, "final_probs", "background", max(_prob(out, "final_probs", "background"), background))
+        out["source"] = str(out.get("source", "")) + "+hard_positive_aug"
+        degraded.append(out)
+    return degraded
+
+
+def _augment_hard_positive_samples(samples: list[SequenceSample], repeats: int) -> list[SequenceSample]:
+    if repeats <= 0:
+        return samples
+    out = list(samples)
+    for sample in samples:
+        if not _is_hard_positive_sample(sample):
+            continue
+        for idx in range(repeats):
+            severity = 0.4 + 0.2 * (idx % 3)
+            out.append(
+                SequenceSample(
+                    sample.seq,
+                    f"{sample.track_id}__seq_hp{idx + 1}",
+                    sample.label,
+                    _degrade_positive_rows(sample.rows, severity),
+                )
+            )
+    return out
+
+
 def train_tracklet_sequence_classifier(
     jsonl_path: str | Path,
     out: str | Path,
@@ -216,8 +299,11 @@ def train_tracklet_sequence_classifier(
     hidden: int = 32,
     max_len: int = 16,
     hard_negative_augments: int = 0,
+    hard_positive_augments: int = 0,
 ) -> Path:
-    samples = _augment_hard_negative_samples(_load_tracklet_jsonl(jsonl_path), hard_negative_augments)
+    samples = _load_tracklet_jsonl(jsonl_path)
+    samples = _augment_hard_positive_samples(samples, hard_positive_augments)
+    samples = _augment_hard_negative_samples(samples, hard_negative_augments)
     if not samples:
         raise ValueError("Tracklet sequence dataset is empty")
     x, lengths, y = _samples_to_tensors(samples, max_len=max_len)
@@ -261,6 +347,7 @@ def train_tracklet_sequence_classifier(
             "num_positive_tracklets": int((y == 1).sum().item()),
             "num_negative_tracklets": int((y == 0).sum().item()),
             "hard_negative_augments": hard_negative_augments,
+            "hard_positive_augments": hard_positive_augments,
         },
         out_path,
     )

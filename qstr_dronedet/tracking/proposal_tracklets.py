@@ -19,6 +19,12 @@ class ProposalTrackletDatasetResult:
     summary: dict[str, Any]
 
 
+@dataclass
+class MergedTrackletJsonlResult:
+    json_path: Path
+    summary: dict[str, Any]
+
+
 def _load_jsonl(path: str | Path) -> list[dict[str, Any]]:
     rows = []
     with Path(path).open("r", encoding="utf-8") as f:
@@ -269,3 +275,50 @@ def build_proposal_tracklet_dataset(
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return ProposalTrackletDatasetResult(csv_path=csv_path, json_path=json_path, summary=summary)
+
+
+def merge_tracklet_jsonl(
+    inputs: list[str | Path],
+    out: str | Path,
+    source_names: list[str] | None = None,
+) -> MergedTrackletJsonlResult:
+    if not inputs:
+        raise ValueError("At least one input JSONL is required")
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    source_names = source_names or [Path(path).parent.name or f"source_{idx + 1}" for idx, path in enumerate(inputs)]
+    if len(source_names) != len(inputs):
+        raise ValueError("--source-names must have the same length as --inputs")
+    seen: set[tuple[str, str, str]] = set()
+    counts: dict[str, int] = {}
+    labels = {0: 0, 1: 0}
+    total = 0
+    with out_path.open("w", encoding="utf-8") as f_out:
+        for source, path in zip(source_names, inputs):
+            for item in _load_jsonl(path):
+                meta = dict(item.get("meta") or {})
+                seq = str(meta.get("seq", ""))
+                track_id = str(meta.get("track_id", ""))
+                key = (source, seq, track_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                meta["dataset_source"] = source
+                label = int(float(meta.get("label", 0)))
+                labels[label] = labels.get(label, 0) + 1
+                bucket = str(meta.get("bucket", "unbucketed"))
+                counts[f"{source}:{bucket}"] = counts.get(f"{source}:{bucket}", 0) + 1
+                item["meta"] = meta
+                f_out.write(json.dumps(item, ensure_ascii=False) + "\n")
+                total += 1
+    summary = {
+        "inputs": [str(path) for path in inputs],
+        "source_names": source_names,
+        "json_path": str(out_path),
+        "num_tracklets": total,
+        "positives": labels.get(1, 0),
+        "negatives": labels.get(0, 0),
+        "source_bucket_counts": counts,
+    }
+    (out_path.parent / "merge_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return MergedTrackletJsonlResult(json_path=out_path, summary=summary)

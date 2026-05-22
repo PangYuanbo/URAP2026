@@ -57,7 +57,7 @@ from qstr_dronedet.real_data import (
     extract_real_annotated_frames,
 )
 from qstr_dronedet.tracking.kalman import ConstantVelocityTracker
-from qstr_dronedet.tracking.proposal_tracklets import build_proposal_tracklet_dataset
+from qstr_dronedet.tracking.proposal_tracklets import build_proposal_tracklet_dataset, merge_tracklet_jsonl
 from qstr_dronedet.tracking.tracklet_classifier import (
     apply_tracklet_filter_to_infer_outputs,
     build_tracklet_dataset,
@@ -753,6 +753,11 @@ def cmd_build_proposal_tracklet_dataset(args: argparse.Namespace) -> None:
     print(json.dumps({"csv": str(result.csv_path), "jsonl": str(result.json_path), **result.summary}, indent=2))
 
 
+def cmd_merge_tracklet_jsonl(args: argparse.Namespace) -> None:
+    result = merge_tracklet_jsonl(args.inputs, args.out, source_names=args.source_names)
+    print(json.dumps({"jsonl": str(result.json_path), **result.summary}, indent=2))
+
+
 def cmd_train_tracklet_classifier(args: argparse.Namespace) -> None:
     out = train_tracklet_classifier(
         args.csv,
@@ -1364,6 +1369,7 @@ def cmd_select_tracklet_sequence_model(args: argparse.Namespace) -> None:
         epochs_values=args.epochs_values,
         hidden_values=args.hidden_values,
         max_len_values=args.max_len_values,
+        hard_positive_augments_values=args.hard_positive_augments_values,
         hard_negative_augments_values=args.hard_negative_augments_values,
         classifier_thresholds=args.classifier_thresholds,
         promotion_enabled_values=[bool(v) for v in args.promotion_enabled_values] if args.promotion_enabled_values is not None else None,
@@ -1559,6 +1565,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hard-tiny-side", type=float, default=24.0)
     p.add_argument("--hard-low-score", type=float, default=0.25)
     p.set_defaults(func=cmd_build_proposal_tracklet_dataset)
+
+    p = sub.add_parser("merge-tracklet-jsonl")
+    p.add_argument("--inputs", nargs="+", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--source-names", nargs="+", default=None)
+    p.set_defaults(func=cmd_merge_tracklet_jsonl)
 
     p = sub.add_parser("train-tracklet-classifier")
     p.add_argument("--csv", required=True)
@@ -1945,6 +1957,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--epochs-values", nargs="+", type=int, default=[30])
     p.add_argument("--hidden-values", nargs="+", type=int, default=[32])
     p.add_argument("--max-len-values", nargs="+", type=int, default=[12, 24])
+    p.add_argument("--hard-positive-augments-values", nargs="+", type=int, default=[0], help="Oversample/degrade hard positive tracklets during sequence training")
     p.add_argument("--hard-negative-augments-values", nargs="+", type=int, default=[0, 2])
     p.add_argument("--classifier-thresholds", nargs="+", type=float, default=[0.5, 0.7, 0.85])
     p.add_argument("--promotion-enabled-values", nargs="+", type=int, choices=[0, 1], default=[0, 1])

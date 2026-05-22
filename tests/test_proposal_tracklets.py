@@ -1,7 +1,7 @@
 import csv
 import json
 
-from qstr_dronedet.tracking.proposal_tracklets import build_proposal_tracklet_dataset
+from qstr_dronedet.tracking.proposal_tracklets import build_proposal_tracklet_dataset, merge_tracklet_jsonl
 
 
 def _row(frame_id, box, score, track_id=None, source="fallback_yolo", crop=0.5, temporal=0.6, bg=0.3):
@@ -51,3 +51,18 @@ def test_build_proposal_tracklets_relinks_untracked_rows(tmp_path):
     assert result.summary["bucket_counts"]["hard_tiny_positive"] == 1
     assert result.summary["bucket_counts"]["high_score_detector_fp"] == 1
     assert result.json_path.exists()
+
+
+def test_merge_tracklet_jsonl_tags_sources(tmp_path):
+    first = tmp_path / "a.jsonl"
+    second = tmp_path / "b.jsonl"
+    item_a = {"meta": {"seq": "s", "track_id": "1", "label": 1, "bucket": "positive"}, "rows": []}
+    item_b = {"meta": {"seq": "s", "track_id": "1", "label": 0, "bucket": "high_score_detector_fp"}, "rows": []}
+    first.write_text(json.dumps(item_a) + "\n", encoding="utf-8")
+    second.write_text(json.dumps(item_b) + "\n", encoding="utf-8")
+
+    result = merge_tracklet_jsonl([first, second], tmp_path / "merged" / "tracklets.jsonl", source_names=["orig", "proposal"])
+
+    lines = [json.loads(line) for line in result.json_path.read_text(encoding="utf-8").splitlines()]
+    assert result.summary["num_tracklets"] == 2
+    assert {line["meta"]["dataset_source"] for line in lines} == {"orig", "proposal"}
