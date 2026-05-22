@@ -611,6 +611,16 @@ def cmd_infer(args: argparse.Namespace) -> None:
         promotion_score_floor=args.tracklet_promotion_score_floor,
         promotion_min_branch_drone=args.tracklet_promotion_min_branch_drone,
         promotion_max_background=args.tracklet_promotion_max_background,
+        selective_promotion=args.tracklet_selective_promotion,
+        selective_min_temporal_crop_delta=args.tracklet_selective_min_temporal_crop_delta,
+        selective_min_temporal_background_margin=args.tracklet_selective_min_temporal_background_margin,
+        selective_max_tracklet_background=args.tracklet_selective_max_tracklet_background,
+        selective_max_tracklet_objectness=args.tracklet_selective_max_tracklet_objectness,
+        selective_min_tracklet_rows=args.tracklet_selective_min_tracklet_rows,
+        selective_min_temporal_gain_rate=args.tracklet_selective_min_temporal_gain_rate,
+        selective_min_weak_detector_temporal_signal=args.tracklet_selective_min_weak_detector_temporal_signal,
+        selective_require_recovery_source=not args.tracklet_selective_allow_non_recovery_source,
+        selective_max_promoted_tracklets_per_sequence=args.tracklet_selective_max_promoted_tracklets_per_sequence,
     )
         print(json.dumps(summary, indent=2))
 
@@ -1269,6 +1279,15 @@ def cmd_sweep_tracklet_filter(args: argparse.Namespace) -> None:
         promotion_score_floors=args.promotion_score_floors,
         promotion_max_backgrounds=args.promotion_max_backgrounds,
         promotion_min_branch_drone=args.promotion_min_branch_drone,
+        selective_promotion=args.selective_promotion,
+        selective_min_temporal_crop_deltas=args.selective_min_temporal_crop_deltas,
+        selective_min_temporal_background_margins=args.selective_min_temporal_background_margins,
+        selective_max_promoted_tracklets_per_sequence_values=args.selective_max_promoted_tracklets_per_sequence_values,
+        selective_max_tracklet_background=args.selective_max_tracklet_background,
+        selective_max_tracklet_objectness=args.selective_max_tracklet_objectness,
+        selective_min_tracklet_rows=args.selective_min_tracklet_rows,
+        selective_min_temporal_gain_rate=args.selective_min_temporal_gain_rate,
+        selective_min_weak_detector_temporal_signal=args.selective_min_weak_detector_temporal_signal,
         score_threshold=args.score_threshold,
         iou_threshold=args.iou_threshold,
         max_frames=args.max_frames,
@@ -1344,6 +1363,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tracklet-promotion-score-floor", type=float, default=0.22)
     p.add_argument("--tracklet-promotion-min-branch-drone", type=float, default=0.40)
     p.add_argument("--tracklet-promotion-max-background", type=float, default=0.68)
+    p.add_argument("--tracklet-selective-promotion", action="store_true", help="Require tracklet-level recovery evidence and a per-sequence promotion budget before promoting background rows")
+    p.add_argument("--tracklet-selective-min-temporal-crop-delta", type=float, default=0.05)
+    p.add_argument("--tracklet-selective-min-temporal-background-margin", type=float, default=-0.05)
+    p.add_argument("--tracklet-selective-max-tracklet-background", type=float, default=0.60)
+    p.add_argument("--tracklet-selective-max-tracklet-objectness", type=float, default=0.50)
+    p.add_argument("--tracklet-selective-min-tracklet-rows", type=int, default=2)
+    p.add_argument("--tracklet-selective-min-temporal-gain-rate", type=float, default=0.40)
+    p.add_argument("--tracklet-selective-min-weak-detector-temporal-signal", type=float, default=0.05)
+    p.add_argument("--tracklet-selective-allow-non-recovery-source", action="store_true")
+    p.add_argument("--tracklet-selective-max-promoted-tracklets-per-sequence", type=int, default=2, help="0 disables the per-sequence promotion budget")
     p.add_argument("--k-values", nargs="+", type=int, default=[1, 2, 4])
     p.add_argument("--min-area", type=int, default=3)
     p.add_argument("--max-area", type=int, default=5000)
@@ -1759,6 +1788,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--promotion-score-floors", nargs="+", type=float, default=[0.20, 0.22, 0.30])
     p.add_argument("--promotion-max-backgrounds", nargs="+", type=float, default=[0.55, 0.60, 0.68])
     p.add_argument("--promotion-min-branch-drone", type=float, default=0.40)
+    p.add_argument("--selective-promotion", action="store_true")
+    p.add_argument("--selective-min-temporal-crop-deltas", nargs="+", type=float, default=[0.05])
+    p.add_argument("--selective-min-temporal-background-margins", nargs="+", type=float, default=[-0.05])
+    p.add_argument("--selective-max-promoted-tracklets-per-sequence-values", nargs="+", type=int, default=[2])
+    p.add_argument("--selective-max-tracklet-background", type=float, default=0.60)
+    p.add_argument("--selective-max-tracklet-objectness", type=float, default=0.50)
+    p.add_argument("--selective-min-tracklet-rows", type=int, default=2)
+    p.add_argument("--selective-min-temporal-gain-rate", type=float, default=0.40)
+    p.add_argument("--selective-min-weak-detector-temporal-signal", type=float, default=0.05)
     p.add_argument("--score-threshold", type=float, default=0.2)
     p.add_argument("--iou-threshold", type=float, default=0.3)
     p.add_argument("--max-frames", type=int, default=None)

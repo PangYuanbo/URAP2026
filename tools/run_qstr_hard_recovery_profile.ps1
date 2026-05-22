@@ -46,6 +46,15 @@ param(
     [double]$TrackletPromotionScoreFloor = 0.30,
     [double]$TrackletPromotionMinBranchDrone = 0.40,
     [double]$TrackletPromotionMaxBackground = 0.55,
+    [switch]$EnableSelectiveTrackletPromotion,
+    [double]$TrackletSelectiveMinTemporalCropDelta = 0.05,
+    [double]$TrackletSelectiveMinTemporalBackgroundMargin = -0.05,
+    [double]$TrackletSelectiveMaxTrackletBackground = 0.60,
+    [double]$TrackletSelectiveMaxTrackletObjectness = 0.50,
+    [int]$TrackletSelectiveMinTrackletRows = 2,
+    [double]$TrackletSelectiveMinTemporalGainRate = 0.40,
+    [double]$TrackletSelectiveMinWeakDetectorTemporalSignal = 0.05,
+    [int]$TrackletSelectiveMaxPromotedTrackletsPerSequence = 2,
     [int]$MaxFrames = 0,
     [switch]$EnableMotionCandidates,
     [switch]$SaveVideo
@@ -131,6 +140,19 @@ if ($TrackletClassifierWeights -ne "") {
         "--tracklet-promotion-min-branch-drone", "$TrackletPromotionMinBranchDrone",
         "--tracklet-promotion-max-background", "$TrackletPromotionMaxBackground"
     )
+    if ($EnableSelectiveTrackletPromotion) {
+        $ArgsList += @(
+            "--tracklet-selective-promotion",
+            "--tracklet-selective-min-temporal-crop-delta", "$TrackletSelectiveMinTemporalCropDelta",
+            "--tracklet-selective-min-temporal-background-margin", "$TrackletSelectiveMinTemporalBackgroundMargin",
+            "--tracklet-selective-max-tracklet-background", "$TrackletSelectiveMaxTrackletBackground",
+            "--tracklet-selective-max-tracklet-objectness", "$TrackletSelectiveMaxTrackletObjectness",
+            "--tracklet-selective-min-tracklet-rows", "$TrackletSelectiveMinTrackletRows",
+            "--tracklet-selective-min-temporal-gain-rate", "$TrackletSelectiveMinTemporalGainRate",
+            "--tracklet-selective-min-weak-detector-temporal-signal", "$TrackletSelectiveMinWeakDetectorTemporalSignal",
+            "--tracklet-selective-max-promoted-tracklets-per-sequence", "$TrackletSelectiveMaxPromotedTrackletsPerSequence"
+        )
+    }
     if ($DisableTrackletPromotion) {
         $ArgsList += "--disable-tracklet-promotion"
     }

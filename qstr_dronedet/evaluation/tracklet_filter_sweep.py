@@ -138,6 +138,15 @@ def run_tracklet_filter_sweep(
     promotion_score_floors: list[float] | None = None,
     promotion_max_backgrounds: list[float] | None = None,
     promotion_min_branch_drone: float = 0.40,
+    selective_promotion: bool = False,
+    selective_min_temporal_crop_deltas: list[float] | None = None,
+    selective_min_temporal_background_margins: list[float] | None = None,
+    selective_max_promoted_tracklets_per_sequence_values: list[int] | None = None,
+    selective_max_tracklet_background: float = 0.60,
+    selective_max_tracklet_objectness: float = 0.50,
+    selective_min_tracklet_rows: int = 2,
+    selective_min_temporal_gain_rate: float = 0.40,
+    selective_min_weak_detector_temporal_signal: float = 0.05,
     score_threshold: float = 0.20,
     iou_threshold: float = 0.30,
     max_frames: int | None = None,
@@ -145,6 +154,9 @@ def run_tracklet_filter_sweep(
     classifier_thresholds = classifier_thresholds or [0.5, 0.7, 0.85, 0.95]
     promotion_score_floors = promotion_score_floors or [0.20, 0.22, 0.30]
     promotion_max_backgrounds = promotion_max_backgrounds or [0.55, 0.60, 0.68]
+    selective_min_temporal_crop_deltas = selective_min_temporal_crop_deltas or [0.05]
+    selective_min_temporal_background_margins = selective_min_temporal_background_margins or [-0.05]
+    selective_max_promoted_tracklets_per_sequence_values = selective_max_promoted_tracklets_per_sequence_values or [2]
     out_dir = Path(out)
     out_dir.mkdir(parents=True, exist_ok=True)
     pred_rows, diag_rows, seqs = _load_run_rows(run_roots, profile, max_frames)
@@ -156,37 +168,58 @@ def run_tracklet_filter_sweep(
         for promote in [False, True]:
             backgrounds = promotion_max_backgrounds if promote else [0.0]
             floors = promotion_score_floors if promote else [0.0]
+            crop_deltas = selective_min_temporal_crop_deltas if (promote and selective_promotion) else [0.0]
+            background_margins = selective_min_temporal_background_margins if (promote and selective_promotion) else [0.0]
+            budgets = selective_max_promoted_tracklets_per_sequence_values if (promote and selective_promotion) else [0]
             for floor in floors:
                 for max_bg in backgrounds:
-                    filtered, _, filter_summary = filter_infer_rows_with_tracklet_classifier(
-                        pred_rows,
-                        diag_rows,
-                        weights,
-                        threshold=threshold,
-                        promote_positive_tracklets=promote,
-                        promotion_score_floor=floor,
-                        promotion_min_branch_drone=promotion_min_branch_drone,
-                        promotion_max_background=max_bg,
-                    )
-                    metrics = _evaluate_rows(filtered, gt_rows, score_threshold, iou_threshold)
-                    rows.append(
-                        {
-                            "classifier_threshold": threshold,
-                            "promotion_enabled": int(promote),
-                            "promotion_score_floor": floor,
-                            "promotion_max_background": max_bg,
-                            "promotion_min_branch_drone": promotion_min_branch_drone,
-                            **metrics,
-                            "delta_tp": metrics["tp"] - raw_metrics["tp"],
-                            "delta_fp": metrics["fp"] - raw_metrics["fp"],
-                            "delta_fn": metrics["fn"] - raw_metrics["fn"],
-                            "delta_recall": metrics["recall"] - raw_metrics["recall"],
-                            "delta_precision": metrics["precision"] - raw_metrics["precision"],
-                            "raw_drone_predictions": filter_summary["raw_drone_predictions"],
-                            "filtered_drone_predictions_pre_score": filter_summary["filtered_drone_predictions"],
-                            "rejected_drone_predictions_pre_score": filter_summary["rejected_drone_predictions"],
-                        }
-                    )
+                    for crop_delta in crop_deltas:
+                        for background_margin in background_margins:
+                            for budget in budgets:
+                                filtered, _, filter_summary = filter_infer_rows_with_tracklet_classifier(
+                                    pred_rows,
+                                    diag_rows,
+                                    weights,
+                                    threshold=threshold,
+                                    promote_positive_tracklets=promote,
+                                    promotion_score_floor=floor,
+                                    promotion_min_branch_drone=promotion_min_branch_drone,
+                                    promotion_max_background=max_bg,
+                                    selective_promotion=bool(promote and selective_promotion),
+                                    selective_min_temporal_crop_delta=crop_delta,
+                                    selective_min_temporal_background_margin=background_margin,
+                                    selective_max_tracklet_background=selective_max_tracklet_background,
+                                    selective_max_tracklet_objectness=selective_max_tracklet_objectness,
+                                    selective_min_tracklet_rows=selective_min_tracklet_rows,
+                                    selective_min_temporal_gain_rate=selective_min_temporal_gain_rate,
+                                    selective_min_weak_detector_temporal_signal=selective_min_weak_detector_temporal_signal,
+                                    selective_max_promoted_tracklets_per_sequence=budget,
+                                )
+                                metrics = _evaluate_rows(filtered, gt_rows, score_threshold, iou_threshold)
+                                rows.append(
+                                    {
+                                        "classifier_threshold": threshold,
+                                        "promotion_enabled": int(promote),
+                                        "promotion_score_floor": floor,
+                                        "promotion_max_background": max_bg,
+                                        "promotion_min_branch_drone": promotion_min_branch_drone,
+                                        "selective_promotion": int(bool(promote and selective_promotion)),
+                                        "selective_min_temporal_crop_delta": crop_delta,
+                                        "selective_min_temporal_background_margin": background_margin,
+                                        "selective_max_promoted_tracklets_per_sequence": budget,
+                                        **metrics,
+                                        "delta_tp": metrics["tp"] - raw_metrics["tp"],
+                                        "delta_fp": metrics["fp"] - raw_metrics["fp"],
+                                        "delta_fn": metrics["fn"] - raw_metrics["fn"],
+                                        "delta_recall": metrics["recall"] - raw_metrics["recall"],
+                                        "delta_precision": metrics["precision"] - raw_metrics["precision"],
+                                        "raw_drone_predictions": filter_summary["raw_drone_predictions"],
+                                        "filtered_drone_predictions_pre_score": filter_summary["filtered_drone_predictions"],
+                                        "rejected_drone_predictions_pre_score": filter_summary["rejected_drone_predictions"],
+                                        "promoted_drone_predictions_pre_score": filter_summary["promoted_drone_predictions"],
+                                        "selective_allowed_tracklets": filter_summary["selective_allowed_tracklets"],
+                                    }
+                                )
 
     stable_target_recall = raw_metrics["recall"] - 0.02
     hard_target_recall = raw_metrics["recall"] + 0.05
@@ -211,6 +244,7 @@ def run_tracklet_filter_sweep(
         "max_frames": max_frames,
         "raw": raw_metrics,
         "num_configs": len(rows),
+        "selective_promotion": selective_promotion,
         "stable_target_recall": stable_target_recall,
         "stable_met_target": bool(stable_candidates),
         "selected_stable": stable,

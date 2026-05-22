@@ -15,6 +15,7 @@ param(
     [double]$HardTrackletPromotionScoreFloor = 0.30,
     [double]$TrackletPromotionMinBranchDrone = 0.40,
     [double]$HardTrackletPromotionMaxBackground = 0.55,
+    [switch]$EnableSelectiveHardRecovery,
     [switch]$SkipStable,
     [switch]$SkipHardRecovery
 )
@@ -72,6 +73,9 @@ foreach ($VideoFile in $Videos) {
         $HardParams["TrackletPromotionScoreFloor"] = $HardTrackletPromotionScoreFloor
         $HardParams["TrackletPromotionMinBranchDrone"] = $TrackletPromotionMinBranchDrone
         $HardParams["TrackletPromotionMaxBackground"] = $HardTrackletPromotionMaxBackground
+        if ($EnableSelectiveHardRecovery) {
+            $HardParams["EnableSelectiveTrackletPromotion"] = $true
+        }
         & (Join-Path $PSScriptRoot "run_qstr_hard_recovery_profile.ps1") @HardParams
     }
 }

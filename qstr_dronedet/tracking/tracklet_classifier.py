@@ -294,6 +294,106 @@ def _append_cause(cause: Any, value: str) -> str:
     return f"{text}+{value}"
 
 
+def _row_seq(row: dict[str, Any]) -> str:
+    seq = row.get("seq")
+    return str(seq) if seq is not None and seq != "" else "__single_sequence__"
+
+
+def _promotion_evidence(row: dict[str, Any], score: dict[str, Any]) -> dict[str, float]:
+    feats = score.get("features", {})
+    crop_drone = _prob(row, "crop_probs", "drone")
+    temporal_drone = _prob(row, "temporal_probs", "drone")
+    final_drone = _prob(row, "final_probs", "drone")
+    background = max(_prob(row, "crop_probs", "background"), _prob(row, "temporal_probs", "background"), _prob(row, "final_probs", "background"))
+    tracklet_crop = float(feats.get("mean_crop_drone", 0.0))
+    tracklet_temporal = float(feats.get("mean_temporal_drone", 0.0))
+    tracklet_final = float(feats.get("mean_final_drone", 0.0))
+    tracklet_background = float(feats.get("mean_background", 1.0))
+    branch_drone = max(crop_drone, temporal_drone, final_drone, tracklet_crop, tracklet_temporal, tracklet_final)
+    effective_background = min(background if background > 0 else 1.0, tracklet_background)
+    effective_temporal = max(temporal_drone, tracklet_temporal)
+    effective_crop = max(crop_drone, tracklet_crop)
+    source = str(row.get("source", ""))
+    has_recovery_source = float("fallback" in source or "tracker" in source or float(feats.get("fallback_rate", 0.0)) > 0.0)
+    return {
+        "branch_drone": branch_drone,
+        "effective_background": effective_background,
+        "temporal_crop_delta": effective_temporal - effective_crop,
+        "temporal_background_margin": effective_temporal - effective_background,
+        "tracklet_background": tracklet_background,
+        "tracklet_rows": float(feats.get("num_rows", 0.0)),
+        "tracklet_prob": float(score.get("prob_tracklet_drone", 0.0)),
+        "fallback_rate": float(feats.get("fallback_rate", 0.0)),
+        "detector_update_rate": float(feats.get("detector_update_rate", 0.0)),
+        "temporal_gain_rate": float(feats.get("temporal_gain_rate", 0.0)),
+        "weak_detector_temporal_signal": float(feats.get("weak_detector_temporal_signal", 0.0)),
+        "max_objectness": float(feats.get("max_objectness", 0.0)),
+        "has_recovery_source": has_recovery_source,
+    }
+
+
+def _selective_tracklet_key_allowlist(
+    rows: list[dict[str, Any]],
+    scores: dict[str, dict[str, Any]],
+    promotion_min_branch_drone: float,
+    promotion_max_background: float,
+    min_temporal_crop_delta: float,
+    min_temporal_background_margin: float,
+    max_tracklet_background: float,
+    max_tracklet_objectness: float,
+    min_tracklet_rows: int,
+    min_temporal_gain_rate: float,
+    min_weak_detector_temporal_signal: float,
+    require_recovery_source: bool,
+    max_promoted_tracklets_per_sequence: int,
+) -> set[str]:
+    candidates_by_seq: dict[str, dict[str, float]] = {}
+    for row in rows:
+        key = _row_track_key(row)
+        if key is None or row.get("predicted_class") == "drone":
+            continue
+        score = scores.get(key)
+        if not score or not bool(score.get("tracklet_is_drone", False)):
+            continue
+        evidence = _promotion_evidence(row, score)
+        if evidence["branch_drone"] < promotion_min_branch_drone:
+            continue
+        if evidence["effective_background"] > promotion_max_background:
+            continue
+        if evidence["temporal_crop_delta"] < min_temporal_crop_delta:
+            continue
+        if evidence["temporal_background_margin"] < min_temporal_background_margin:
+            continue
+        if evidence["tracklet_background"] > max_tracklet_background:
+            continue
+        if evidence["max_objectness"] > max_tracklet_objectness and evidence["fallback_rate"] <= 0.0:
+            continue
+        if evidence["tracklet_rows"] < float(min_tracklet_rows):
+            continue
+        if evidence["temporal_gain_rate"] < min_temporal_gain_rate and evidence["weak_detector_temporal_signal"] < min_weak_detector_temporal_signal:
+            continue
+        if require_recovery_source and evidence["has_recovery_source"] <= 0.0:
+            continue
+        rank_score = (
+            evidence["tracklet_prob"]
+            + 0.5 * evidence["temporal_background_margin"]
+            + 0.25 * evidence["temporal_crop_delta"]
+            + 0.20 * evidence["temporal_gain_rate"]
+            - 0.30 * evidence["effective_background"]
+        )
+        seq = _row_seq(row)
+        current = candidates_by_seq.setdefault(seq, {})
+        current[key] = max(current.get(key, -1e9), rank_score)
+
+    allowed: set[str] = set()
+    for seq_candidates in candidates_by_seq.values():
+        ordered = sorted(seq_candidates.items(), key=lambda item: item[1], reverse=True)
+        if max_promoted_tracklets_per_sequence > 0:
+            ordered = ordered[:max_promoted_tracklets_per_sequence]
+        allowed.update(key for key, _ in ordered)
+    return allowed
+
+
 def apply_tracklet_filter_to_infer_outputs(
     predictions_path: str | Path,
     diagnostics_path: str | Path,
@@ -304,6 +404,16 @@ def apply_tracklet_filter_to_infer_outputs(
     promotion_score_floor: float = 0.22,
     promotion_min_branch_drone: float = 0.40,
     promotion_max_background: float = 0.68,
+    selective_promotion: bool = False,
+    selective_min_temporal_crop_delta: float = 0.05,
+    selective_min_temporal_background_margin: float = -0.05,
+    selective_max_tracklet_background: float = 0.60,
+    selective_max_tracklet_objectness: float = 0.50,
+    selective_min_tracklet_rows: int = 2,
+    selective_min_temporal_gain_rate: float = 0.40,
+    selective_min_weak_detector_temporal_signal: float = 0.05,
+    selective_require_recovery_source: bool = True,
+    selective_max_promoted_tracklets_per_sequence: int = 2,
 ) -> dict[str, Any]:
     pred_path = Path(predictions_path)
     diag_path = Path(diagnostics_path)
@@ -319,6 +429,16 @@ def apply_tracklet_filter_to_infer_outputs(
         promotion_score_floor=promotion_score_floor,
         promotion_min_branch_drone=promotion_min_branch_drone,
         promotion_max_background=promotion_max_background,
+        selective_promotion=selective_promotion,
+        selective_min_temporal_crop_delta=selective_min_temporal_crop_delta,
+        selective_min_temporal_background_margin=selective_min_temporal_background_margin,
+        selective_max_tracklet_background=selective_max_tracklet_background,
+        selective_max_tracklet_objectness=selective_max_tracklet_objectness,
+        selective_min_tracklet_rows=selective_min_tracklet_rows,
+        selective_min_temporal_gain_rate=selective_min_temporal_gain_rate,
+        selective_min_weak_detector_temporal_signal=selective_min_weak_detector_temporal_signal,
+        selective_require_recovery_source=selective_require_recovery_source,
+        selective_max_promoted_tracklets_per_sequence=selective_max_promoted_tracklets_per_sequence,
     )
 
     raw_pred_path = pred_path.with_name("predictions_raw.jsonl")
@@ -354,8 +474,37 @@ def filter_infer_rows_with_tracklet_classifier(
     promotion_score_floor: float = 0.22,
     promotion_min_branch_drone: float = 0.40,
     promotion_max_background: float = 0.68,
+    selective_promotion: bool = False,
+    selective_min_temporal_crop_delta: float = 0.05,
+    selective_min_temporal_background_margin: float = -0.05,
+    selective_max_tracklet_background: float = 0.60,
+    selective_max_tracklet_objectness: float = 0.50,
+    selective_min_tracklet_rows: int = 2,
+    selective_min_temporal_gain_rate: float = 0.40,
+    selective_min_weak_detector_temporal_signal: float = 0.05,
+    selective_require_recovery_source: bool = True,
+    selective_max_promoted_tracklets_per_sequence: int = 2,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     scores = score_tracklets_from_rows(diag_rows, weights, threshold=threshold)
+    selective_allowlist = (
+        _selective_tracklet_key_allowlist(
+            diag_rows,
+            scores,
+            promotion_min_branch_drone=promotion_min_branch_drone,
+            promotion_max_background=promotion_max_background,
+            min_temporal_crop_delta=selective_min_temporal_crop_delta,
+            min_temporal_background_margin=selective_min_temporal_background_margin,
+            max_tracklet_background=selective_max_tracklet_background,
+            max_tracklet_objectness=selective_max_tracklet_objectness,
+            min_tracklet_rows=selective_min_tracklet_rows,
+            min_temporal_gain_rate=selective_min_temporal_gain_rate,
+            min_weak_detector_temporal_signal=selective_min_weak_detector_temporal_signal,
+            require_recovery_source=selective_require_recovery_source,
+            max_promoted_tracklets_per_sequence=selective_max_promoted_tracklets_per_sequence,
+        )
+        if selective_promotion
+        else None
+    )
 
     def update_row(row: dict[str, Any]) -> dict[str, Any]:
         out = dict(row)
@@ -392,25 +541,20 @@ def filter_infer_rows_with_tracklet_classifier(
             out["final_drone_score"] = max(float(out.get("final_drone_score", 0.0)), promotion_score_floor * float(score["prob_tracklet_drone"]))
             out["diagnostic_cause"] = _append_cause(out.get("diagnostic_cause"), "tracklet_confirmed")
         elif promote_positive_tracklets and is_drone:
-            crop_drone = _prob(out, "crop_probs", "drone")
-            temporal_drone = _prob(out, "temporal_probs", "drone")
-            final_drone = _prob(out, "final_probs", "drone")
-            background = max(_prob(out, "crop_probs", "background"), _prob(out, "temporal_probs", "background"), _prob(out, "final_probs", "background"))
-            feats = score.get("features", {})
-            tracklet_branch_drone = max(
-                float(feats.get("mean_crop_drone", 0.0)),
-                float(feats.get("mean_temporal_drone", 0.0)),
-                float(feats.get("mean_final_drone", 0.0)),
-            )
-            tracklet_background = float(feats.get("mean_background", 1.0))
-            branch_drone = max(crop_drone, temporal_drone, final_drone, tracklet_branch_drone)
-            effective_background = min(background if background > 0 else 1.0, tracklet_background)
+            evidence = _promotion_evidence(out, score)
+            branch_drone = evidence["branch_drone"]
+            effective_background = evidence["effective_background"]
+            selective_allowed = selective_allowlist is None or (track_id is not None and track_id in selective_allowlist)
             if branch_drone >= promotion_min_branch_drone and effective_background <= promotion_max_background:
+                if not selective_allowed:
+                    out["tracklet_promotion_suppressed"] = True
+                    out["diagnostic_cause"] = _append_cause(out.get("diagnostic_cause"), "tracklet_promotion_budget_rejected")
+                    return out
                 out["raw_predicted_class"] = out.get("predicted_class")
                 out["raw_final_drone_score"] = out.get("final_drone_score")
                 out["predicted_class"] = "drone"
                 out["final_drone_score"] = max(float(out.get("final_drone_score", 0.0)), promotion_score_floor * float(score["prob_tracklet_drone"]))
-                out["diagnostic_cause"] = _append_cause(out.get("diagnostic_cause"), "tracklet_promoted")
+                out["diagnostic_cause"] = _append_cause(out.get("diagnostic_cause"), "tracklet_selective_promoted" if selective_promotion else "tracklet_promoted")
         return out
 
     filtered_pred_rows = [update_row(row) for row in pred_rows]
@@ -419,6 +563,7 @@ def filter_infer_rows_with_tracklet_classifier(
     raw_drone = sum(1 for row in pred_rows if row.get("predicted_class") == "drone")
     filtered_drone = sum(1 for row in filtered_pred_rows if row.get("predicted_class") == "drone")
     rejected = raw_drone - filtered_drone
+    promoted = sum(1 for row in filtered_pred_rows if row.get("predicted_class") == "drone" and row.get("raw_predicted_class") not in (None, "drone"))
     summary = {
         "weights": str(weights),
         "threshold": threshold,
@@ -427,10 +572,22 @@ def filter_infer_rows_with_tracklet_classifier(
         "promotion_score_floor": promotion_score_floor,
         "promotion_min_branch_drone": promotion_min_branch_drone,
         "promotion_max_background": promotion_max_background,
+        "selective_promotion": selective_promotion,
+        "selective_min_temporal_crop_delta": selective_min_temporal_crop_delta,
+        "selective_min_temporal_background_margin": selective_min_temporal_background_margin,
+        "selective_max_tracklet_background": selective_max_tracklet_background,
+        "selective_max_tracklet_objectness": selective_max_tracklet_objectness,
+        "selective_min_tracklet_rows": selective_min_tracklet_rows,
+        "selective_min_temporal_gain_rate": selective_min_temporal_gain_rate,
+        "selective_min_weak_detector_temporal_signal": selective_min_weak_detector_temporal_signal,
+        "selective_require_recovery_source": selective_require_recovery_source,
+        "selective_max_promoted_tracklets_per_sequence": selective_max_promoted_tracklets_per_sequence,
+        "selective_allowed_tracklets": len(selective_allowlist) if selective_allowlist is not None else None,
         "num_tracklets": len(scores),
         "raw_drone_predictions": raw_drone,
         "filtered_drone_predictions": filtered_drone,
         "rejected_drone_predictions": rejected,
+        "promoted_drone_predictions": promoted,
     }
     return filtered_pred_rows, filtered_diag_rows, summary
 
