@@ -42,6 +42,7 @@ from qstr_dronedet.evaluation.stage_b_benchmark import run_stage_b_oracle_benchm
 from qstr_dronedet.evaluation.tracker_benchmark import run_tracker_oracle_benchmark
 from qstr_dronedet.evaluation.tracklet_filter_sweep import run_tracklet_filter_sweep
 from qstr_dronedet.evaluation.tracklet_model_selection import run_tracklet_model_selection
+from qstr_dronedet.evaluation.tracklet_sequence_model_selection import run_tracklet_sequence_model_selection
 from qstr_dronedet.features.roi import crop_with_context, extract_temporal_tube
 from qstr_dronedet.fusion.modes import determine_mode
 from qstr_dronedet.fusion.rule_fusion import fuse_rule_based
@@ -1326,6 +1327,34 @@ def cmd_select_tracklet_model(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def cmd_select_tracklet_sequence_model(args: argparse.Namespace) -> None:
+    summary = run_tracklet_sequence_model_selection(
+        args.tracklets_jsonl,
+        args.run_roots,
+        args.gt,
+        args.out,
+        profile=args.profile,
+        calib_seqs=args.calib_seqs,
+        calib_seq_patterns=args.calib_seq_patterns,
+        calib_fraction=args.calib_fraction,
+        epochs_values=args.epochs_values,
+        hidden_values=args.hidden_values,
+        max_len_values=args.max_len_values,
+        hard_negative_augments_values=args.hard_negative_augments_values,
+        classifier_thresholds=args.classifier_thresholds,
+        promotion_enabled_values=[bool(v) for v in args.promotion_enabled_values] if args.promotion_enabled_values is not None else None,
+        promotion_score_floors=args.promotion_score_floors,
+        promotion_max_backgrounds=args.promotion_max_backgrounds,
+        selective_promotion=args.selective_promotion,
+        selective_max_promoted_tracklets_per_sequence_values=args.selective_max_promoted_tracklets_per_sequence_values,
+        score_threshold=args.score_threshold,
+        iou_threshold=args.iou_threshold,
+        max_frames=args.max_frames,
+        max_recall_drop=args.max_recall_drop,
+    )
+    print(json.dumps(summary, indent=2))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="qstr-dronedet", description="QSTR-DroneDet runnable research MVP")
     sub = parser.add_subparsers(dest="cmd")
@@ -1859,6 +1888,31 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-frames", type=int, default=None)
     p.add_argument("--max-recall-drop", type=float, default=0.02, help="Selection prefers configs within this recall drop from raw before minimizing FP")
     p.set_defaults(func=cmd_select_tracklet_model)
+
+    p = sub.add_parser("select-tracklet-sequence-model")
+    p.add_argument("--tracklets-jsonl", required=True, help="Tracklet JSONL built from train/adapt diagnostics")
+    p.add_argument("--run-roots", nargs="+", required=True, help="Train/adapt profile output roots used for downstream calibration")
+    p.add_argument("--gt", required=True, help="QSTR real CSV covering the run roots")
+    p.add_argument("--out", required=True)
+    p.add_argument("--profile", default="hard_recovery")
+    p.add_argument("--calib-seqs", nargs="+", default=None)
+    p.add_argument("--calib-seq-patterns", nargs="+", default=None)
+    p.add_argument("--calib-fraction", type=float, default=0.4)
+    p.add_argument("--epochs-values", nargs="+", type=int, default=[30])
+    p.add_argument("--hidden-values", nargs="+", type=int, default=[32])
+    p.add_argument("--max-len-values", nargs="+", type=int, default=[12, 24])
+    p.add_argument("--hard-negative-augments-values", nargs="+", type=int, default=[0, 2])
+    p.add_argument("--classifier-thresholds", nargs="+", type=float, default=[0.5, 0.7, 0.85])
+    p.add_argument("--promotion-enabled-values", nargs="+", type=int, choices=[0, 1], default=[0, 1])
+    p.add_argument("--promotion-score-floors", nargs="+", type=float, default=[0.22, 0.30])
+    p.add_argument("--promotion-max-backgrounds", nargs="+", type=float, default=[0.55, 0.60])
+    p.add_argument("--selective-promotion", action="store_true")
+    p.add_argument("--selective-max-promoted-tracklets-per-sequence-values", nargs="+", type=int, default=[1, 2])
+    p.add_argument("--score-threshold", type=float, default=0.2)
+    p.add_argument("--iou-threshold", type=float, default=0.3)
+    p.add_argument("--max-frames", type=int, default=None)
+    p.add_argument("--max-recall-drop", type=float, default=0.02)
+    p.set_defaults(func=cmd_select_tracklet_sequence_model)
     return parser
 
 
