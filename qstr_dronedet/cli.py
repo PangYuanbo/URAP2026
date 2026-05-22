@@ -57,6 +57,7 @@ from qstr_dronedet.real_data import (
     extract_real_annotated_frames,
 )
 from qstr_dronedet.tracking.kalman import ConstantVelocityTracker
+from qstr_dronedet.tracking.proposal_tracklets import build_proposal_tracklet_dataset
 from qstr_dronedet.tracking.tracklet_classifier import (
     apply_tracklet_filter_to_infer_outputs,
     build_tracklet_dataset,
@@ -725,6 +726,29 @@ def cmd_build_tracklet_dataset(args: argparse.Namespace) -> None:
         max_frames=args.max_frames,
         iou_threshold=args.iou_threshold,
         center_threshold=args.center_threshold,
+    )
+    print(json.dumps({"csv": str(result.csv_path), "jsonl": str(result.json_path), **result.summary}, indent=2))
+
+
+def cmd_build_proposal_tracklet_dataset(args: argparse.Namespace) -> None:
+    result = build_proposal_tracklet_dataset(
+        args.run_roots,
+        args.gt_csv,
+        args.out,
+        profile=args.profile,
+        diagnostics_name=args.diagnostics_name,
+        max_frames=args.max_frames,
+        max_gap=args.max_gap,
+        base_radius=args.base_radius,
+        radius_per_side=args.radius_per_side,
+        min_iou=args.min_iou,
+        min_score=args.min_score,
+        detector_only=args.detector_only,
+        min_tracklet_rows=args.min_tracklet_rows,
+        iou_threshold=args.iou_threshold,
+        center_threshold=args.center_threshold,
+        hard_tiny_side=args.hard_tiny_side,
+        hard_low_score=args.hard_low_score,
     )
     print(json.dumps({"csv": str(result.csv_path), "jsonl": str(result.json_path), **result.summary}, indent=2))
 
@@ -1515,6 +1539,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--iou-threshold", type=float, default=0.3)
     p.add_argument("--center-threshold", type=float, default=24.0)
     p.set_defaults(func=cmd_build_tracklet_dataset)
+
+    p = sub.add_parser("build-proposal-tracklet-dataset")
+    p.add_argument("--run-roots", nargs="+", required=True, help="Profile benchmark roots containing <profile>/<seq>/diagnostics*.jsonl")
+    p.add_argument("--gt-csv", required=True, help="Unified CSV with video_path,frame_id,x1,y1,x2,y2,class,tag")
+    p.add_argument("--out", required=True)
+    p.add_argument("--profile", default="hard_recovery")
+    p.add_argument("--diagnostics-name", default="diagnostics_raw.jsonl")
+    p.add_argument("--max-frames", type=int, default=None)
+    p.add_argument("--max-gap", type=int, default=3)
+    p.add_argument("--base-radius", type=float, default=18.0)
+    p.add_argument("--radius-per-side", type=float, default=0.75)
+    p.add_argument("--min-iou", type=float, default=0.05)
+    p.add_argument("--min-score", type=float, default=0.0)
+    p.add_argument("--detector-only", action="store_true")
+    p.add_argument("--min-tracklet-rows", type=int, default=1)
+    p.add_argument("--iou-threshold", type=float, default=0.3)
+    p.add_argument("--center-threshold", type=float, default=24.0)
+    p.add_argument("--hard-tiny-side", type=float, default=24.0)
+    p.add_argument("--hard-low-score", type=float, default=0.25)
+    p.set_defaults(func=cmd_build_proposal_tracklet_dataset)
 
     p = sub.add_parser("train-tracklet-classifier")
     p.add_argument("--csv", required=True)
