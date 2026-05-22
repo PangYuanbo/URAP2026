@@ -38,14 +38,14 @@ param(
     [int]$HardTinyMinTrackDetectorUpdates = 1,
     [double]$HardTinyMaxTrackDrift = 48.0,
     [int]$HardTinyMinTrackHistory = 2,
-    [string]$TrackletClassifierWeights = "",
+    [string]$TrackletClassifierWeights = "runs\profiles\tracklet_train_eval_20260521_154002\tracklet_mlp_v2_hardtiny_aug.pt",
     [double]$TrackletClassifierThreshold = 0.5,
     [ValidateSet("keep", "suppress")]
     [string]$TrackletFilterUntracked = "keep",
     [switch]$DisableTrackletPromotion,
-    [double]$TrackletPromotionScoreFloor = 0.22,
+    [double]$TrackletPromotionScoreFloor = 0.30,
     [double]$TrackletPromotionMinBranchDrone = 0.40,
-    [double]$TrackletPromotionMaxBackground = 0.68,
+    [double]$TrackletPromotionMaxBackground = 0.55,
     [int]$MaxFrames = 0,
     [switch]$EnableMotionCandidates,
     [switch]$SaveVideo

@@ -7,14 +7,14 @@ param(
     [int]$MaxVideos = 0,
     [double]$ScoreThreshold = 0.20,
     [double]$IouThreshold = 0.30,
-    [string]$TrackletClassifierWeights = "",
-    [double]$TrackletClassifierThreshold = 0.5,
+    [string]$TrackletClassifierWeights = "runs\profiles\tracklet_train_eval_20260521_154002\tracklet_mlp_v2_hardtiny_aug.pt",
+    [double]$StableTrackletClassifierThreshold = 0.95,
+    [double]$HardTrackletClassifierThreshold = 0.50,
     [ValidateSet("keep", "suppress")]
     [string]$TrackletFilterUntracked = "keep",
-    [switch]$DisableTrackletPromotion,
-    [double]$TrackletPromotionScoreFloor = 0.22,
+    [double]$HardTrackletPromotionScoreFloor = 0.30,
     [double]$TrackletPromotionMinBranchDrone = 0.40,
-    [double]$TrackletPromotionMaxBackground = 0.68,
+    [double]$HardTrackletPromotionMaxBackground = 0.55,
     [switch]$SkipStable,
     [switch]$SkipHardRecovery
 )
@@ -28,6 +28,9 @@ if (-not (Test-Path $HeldoutRoot)) {
 }
 if (-not (Test-Path $AnnotationsCsv)) {
     throw "Missing annotations CSV: $AnnotationsCsv"
+}
+if ($TrackletClassifierWeights -ne "" -and -not (Test-Path $TrackletClassifierWeights)) {
+    throw "Missing tracklet classifier weights: $TrackletClassifierWeights"
 }
 
 $Videos = Get-ChildItem -Recurse -Filter visible.mp4 (Join-Path $HeldoutRoot "raw_videos") |
@@ -50,17 +53,10 @@ foreach ($VideoFile in $Videos) {
             Device = $Device
             MaxFrames = $MaxFrames
         }
-        if ($TrackletClassifierWeights -ne "") {
-            $StableParams["TrackletClassifierWeights"] = $TrackletClassifierWeights
-            $StableParams["TrackletClassifierThreshold"] = $TrackletClassifierThreshold
-            $StableParams["TrackletFilterUntracked"] = $TrackletFilterUntracked
-            $StableParams["TrackletPromotionScoreFloor"] = $TrackletPromotionScoreFloor
-            $StableParams["TrackletPromotionMinBranchDrone"] = $TrackletPromotionMinBranchDrone
-            $StableParams["TrackletPromotionMaxBackground"] = $TrackletPromotionMaxBackground
-            if ($DisableTrackletPromotion) {
-                $StableParams["DisableTrackletPromotion"] = $true
-            }
-        }
+        $StableParams["TrackletClassifierWeights"] = $TrackletClassifierWeights
+        $StableParams["TrackletClassifierThreshold"] = $StableTrackletClassifierThreshold
+        $StableParams["TrackletFilterUntracked"] = $TrackletFilterUntracked
+        $StableParams["DisableTrackletPromotion"] = $true
         & (Join-Path $PSScriptRoot "run_qstr_stable_profile.ps1") @StableParams
     }
     if (-not $SkipHardRecovery) {
@@ -70,17 +66,12 @@ foreach ($VideoFile in $Videos) {
             Device = $Device
             MaxFrames = $MaxFrames
         }
-        if ($TrackletClassifierWeights -ne "") {
-            $HardParams["TrackletClassifierWeights"] = $TrackletClassifierWeights
-            $HardParams["TrackletClassifierThreshold"] = $TrackletClassifierThreshold
-            $HardParams["TrackletFilterUntracked"] = $TrackletFilterUntracked
-            $HardParams["TrackletPromotionScoreFloor"] = $TrackletPromotionScoreFloor
-            $HardParams["TrackletPromotionMinBranchDrone"] = $TrackletPromotionMinBranchDrone
-            $HardParams["TrackletPromotionMaxBackground"] = $TrackletPromotionMaxBackground
-            if ($DisableTrackletPromotion) {
-                $HardParams["DisableTrackletPromotion"] = $true
-            }
-        }
+        $HardParams["TrackletClassifierWeights"] = $TrackletClassifierWeights
+        $HardParams["TrackletClassifierThreshold"] = $HardTrackletClassifierThreshold
+        $HardParams["TrackletFilterUntracked"] = $TrackletFilterUntracked
+        $HardParams["TrackletPromotionScoreFloor"] = $HardTrackletPromotionScoreFloor
+        $HardParams["TrackletPromotionMinBranchDrone"] = $TrackletPromotionMinBranchDrone
+        $HardParams["TrackletPromotionMaxBackground"] = $HardTrackletPromotionMaxBackground
         & (Join-Path $PSScriptRoot "run_qstr_hard_recovery_profile.ps1") @HardParams
     }
 }
@@ -130,9 +121,9 @@ with gt_csv.open("r", encoding="utf-8-sig", newline="") as f:
             "tag": row.get("tag", ""),
         })
 
-def load_preds(profile_dir):
+def load_preds(profile_dir, prediction_name="predictions.jsonl"):
     preds = []
-    for pred_path in profile_dir.glob("*/predictions.jsonl"):
+    for pred_path in profile_dir.glob(f"*/{prediction_name}"):
         seq = pred_path.parent.name
         with pred_path.open("r", encoding="utf-8") as f:
             for line in f:
@@ -155,11 +146,11 @@ def load_preds(profile_dir):
                 })
     return preds
 
-def summarize_profile(profile):
+def summarize_profile(profile, prediction_name="predictions.jsonl", label=None):
     profile_dir = out_root / profile
-    processed_seqs = {p.parent.name for p in profile_dir.glob("*/predictions.jsonl")}
+    processed_seqs = {p.parent.name for p in profile_dir.glob(f"*/{prediction_name}")}
     profile_gt_rows = [gt for gt in gt_rows if gt["seq"] in processed_seqs]
-    preds = load_preds(profile_dir)
+    preds = load_preds(profile_dir, prediction_name=prediction_name)
     gt_by_key = {}
     for idx, gt in enumerate(profile_gt_rows):
         gt_by_key.setdefault((gt["seq"], gt["frame_id"]), []).append((idx, gt))
@@ -207,7 +198,9 @@ def summarize_profile(profile):
             tag_item["recall"] = tag_item["tp"] / max(1, tag_item["gt"])
 
     return {
-        "profile": profile,
+        "profile": label or profile,
+        "source_profile": profile,
+        "prediction_name": prediction_name,
         "score_threshold": score_threshold,
         "iou_threshold": iou_threshold,
         "max_frames": max_frames,
@@ -222,13 +215,41 @@ def summarize_profile(profile):
     }
 
 profiles = [p.name for p in out_root.iterdir() if p.is_dir() and p.name in {"stable", "hard_recovery"}]
-summary = {"profiles": [summarize_profile(p) for p in sorted(profiles)]}
+profile_summaries = []
+if "hard_recovery" in profiles and list((out_root / "hard_recovery").glob("*/predictions_raw.jsonl")):
+    profile_summaries.append(summarize_profile("hard_recovery", prediction_name="predictions_raw.jsonl", label="hard_recovery_raw"))
+for p in sorted(profiles):
+    profile_summaries.append(summarize_profile(p))
+summary = {"profiles": profile_summaries}
+by_profile = {p["profile"]: p for p in profile_summaries}
+raw = by_profile.get("hard_recovery_raw")
+if raw:
+    for prof in profile_summaries:
+        prof["delta_vs_hard_recovery_raw"] = {
+            "tp": prof["tp"] - raw["tp"],
+            "fp": prof["fp"] - raw["fp"],
+            "fn": prof["fn"] - raw["fn"],
+            "precision": prof["precision"] - raw["precision"],
+            "recall": prof["recall"] - raw["recall"],
+        }
+        seq_delta = {}
+        for seq, seq_item in prof["per_sequence"].items():
+            raw_seq = raw["per_sequence"].get(seq, {"tp": 0, "fp": 0, "gt": 0, "precision": 0.0, "recall": 0.0})
+            seq_delta[seq] = {
+                "tp": seq_item["tp"] - raw_seq["tp"],
+                "fp": seq_item["fp"] - raw_seq["fp"],
+                "gt": seq_item["gt"] - raw_seq["gt"],
+                "precision": seq_item["precision"] - raw_seq["precision"],
+                "recall": seq_item["recall"] - raw_seq["recall"],
+            }
+        prof["per_sequence_delta_vs_hard_recovery_raw"] = seq_delta
 (out_root / "profile_benchmark_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
 csv_rows = []
 for prof in summary["profiles"]:
     csv_rows.append({
         "profile": prof["profile"],
+        "prediction_name": prof["prediction_name"],
         "gt": prof["gt"],
         "pred_drone": prof["pred_drone"],
         "tp": prof["tp"],
@@ -236,6 +257,9 @@ for prof in summary["profiles"]:
         "fn": prof["fn"],
         "precision": f'{prof["precision"]:.6f}',
         "recall": f'{prof["recall"]:.6f}',
+        "delta_tp_vs_raw": prof.get("delta_vs_hard_recovery_raw", {}).get("tp", ""),
+        "delta_fp_vs_raw": prof.get("delta_vs_hard_recovery_raw", {}).get("fp", ""),
+        "delta_recall_vs_raw": prof.get("delta_vs_hard_recovery_raw", {}).get("recall", ""),
     })
 with (out_root / "profile_benchmark_summary.csv").open("w", encoding="utf-8", newline="") as f:
     writer = csv.DictWriter(f, fieldnames=list(csv_rows[0].keys()) if csv_rows else ["profile"])
