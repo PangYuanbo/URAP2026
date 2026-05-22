@@ -82,7 +82,7 @@ def test_apply_tracklet_filter_rewrites_final_predictions(tmp_path):
 
     result = build_tracklet_dataset([diag], gt, tmp_path / "tracklets")
     weights = train_tracklet_classifier(result.csv_path, tmp_path / "tracklet.pt", epochs=20)
-    summary = apply_tracklet_filter_to_infer_outputs(pred, diag, weights, threshold=0.5)
+    summary = apply_tracklet_filter_to_infer_outputs(pred, diag, weights, threshold=0.99)
 
     assert (run_dir / "predictions_raw.jsonl").exists()
     assert summary["raw_drone_predictions"] == 4
