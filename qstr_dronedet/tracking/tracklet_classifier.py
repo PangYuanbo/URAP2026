@@ -42,6 +42,25 @@ TRACKLET_FEATURES = [
     "frame_density",
     "weak_detector_temporal_signal",
     "score_above_02_rate",
+    "score_slope",
+    "objectness_slope",
+    "temporal_drone_slope",
+    "background_slope",
+    "final_margin_mean",
+    "final_margin_min",
+    "final_margin_slope",
+    "background_dominance_rate",
+    "background_dominance_longest_streak",
+    "temporal_over_background_rate",
+    "temporal_over_background_longest_streak",
+    "score_above_02_longest_streak",
+    "max_frame_gap",
+    "mean_frame_gap",
+    "gap_rate",
+    "first_final_score",
+    "last_final_score",
+    "first_background",
+    "last_background",
 ]
 
 
@@ -136,6 +155,30 @@ def _safe_std(vals: list[float], default: float = 0.0) -> float:
     return float(np.std(vals)) if vals else default
 
 
+def _safe_slope(xs: list[int], ys: list[float]) -> float:
+    if len(xs) < 2 or len(ys) < 2:
+        return 0.0
+    x = np.asarray(xs, dtype=np.float32)
+    y = np.asarray(ys, dtype=np.float32)
+    x = x - float(x.mean())
+    denom = float(np.sum(x * x))
+    if denom <= 1e-6:
+        return 0.0
+    return float(np.sum(x * (y - float(y.mean()))) / denom)
+
+
+def _longest_true_streak(flags: list[bool]) -> float:
+    best = 0
+    cur = 0
+    for flag in flags:
+        if flag:
+            cur += 1
+            best = max(best, cur)
+        else:
+            cur = 0
+    return float(best)
+
+
 def _tracklet_label(seq: str, rows: list[dict[str, Any]], gt_by_key: dict[tuple[str, int], list[tuple[float, float, float, float]]], iou_threshold: float, center_threshold: float) -> tuple[int, float, int]:
     best = 0.0
     matched = 0
@@ -174,9 +217,14 @@ def _features(rows: list[dict[str, Any]]) -> dict[str, float]:
     ]
     frame_ids = [int(r.get("frame_id", 0)) for r in rows]
     track_span = float(max(frame_ids) - min(frame_ids) + 1) if frame_ids else 0.0
+    frame_gaps = [max(0, frame_ids[i] - frame_ids[i - 1] - 1) for i in range(1, len(frame_ids))]
     detector_update_rate = _safe_mean([float("yolo" in s or "fallback" in s or "motion" in s or "seed" in s) for s in sources])
     validated_rate = _safe_mean([float(bool(r.get("track_validated", False))) for r in rows])
     temporal_gain_rate = _safe_mean([float(t > c + 0.05) for c, t in zip(crop_drone, temp_drone)])
+    final_margin = [d - b for d, b in zip(final_drone, bg)]
+    temporal_over_background = [t > b for t, b in zip(temp_drone, bg)]
+    background_dominance = [b >= max(c, t, d) for b, c, t, d in zip(bg, crop_drone, temp_drone, final_drone)]
+    score_above_02 = [s >= 0.2 for s in final_scores]
     out = {
         "num_rows": float(len(rows)),
         "mean_objectness": _safe_mean(objectness),
@@ -206,6 +254,25 @@ def _features(rows: list[dict[str, Any]]) -> dict[str, float]:
         "frame_density": float(len(rows)) / max(1.0, track_span),
         "weak_detector_temporal_signal": temporal_gain_rate * (1.0 - detector_update_rate) * (1.0 - validated_rate),
         "score_above_02_rate": _safe_mean([float(s >= 0.2) for s in final_scores]),
+        "score_slope": _safe_slope(frame_ids, final_scores),
+        "objectness_slope": _safe_slope(frame_ids, objectness),
+        "temporal_drone_slope": _safe_slope(frame_ids, temp_drone),
+        "background_slope": _safe_slope(frame_ids, bg),
+        "final_margin_mean": _safe_mean(final_margin),
+        "final_margin_min": float(min(final_margin)) if final_margin else 0.0,
+        "final_margin_slope": _safe_slope(frame_ids, final_margin),
+        "background_dominance_rate": _safe_mean([float(v) for v in background_dominance]),
+        "background_dominance_longest_streak": _longest_true_streak(background_dominance),
+        "temporal_over_background_rate": _safe_mean([float(v) for v in temporal_over_background]),
+        "temporal_over_background_longest_streak": _longest_true_streak(temporal_over_background),
+        "score_above_02_longest_streak": _longest_true_streak(score_above_02),
+        "max_frame_gap": float(max(frame_gaps)) if frame_gaps else 0.0,
+        "mean_frame_gap": _safe_mean([float(g) for g in frame_gaps]),
+        "gap_rate": _safe_mean([float(g > 0) for g in frame_gaps]),
+        "first_final_score": float(final_scores[0]) if final_scores else 0.0,
+        "last_final_score": float(final_scores[-1]) if final_scores else 0.0,
+        "first_background": float(bg[0]) if bg else 0.0,
+        "last_background": float(bg[-1]) if bg else 0.0,
     }
     return out
 

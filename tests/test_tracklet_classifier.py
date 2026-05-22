@@ -58,6 +58,35 @@ def test_build_train_eval_tracklet_classifier(tmp_path):
     assert (tmp_path / "eval" / "metrics.json").exists()
 
 
+def test_tracklet_dataset_includes_temporal_shape_features(tmp_path):
+    run_dir = tmp_path / "seq001"
+    run_dir.mkdir()
+    diag = run_dir / "diagnostics.jsonl"
+    rows = [
+        _row(0, 1, [10, 10, 20, 20], 0.40, 0.55, 0.40, 0.60, "tracker+yolo_tile"),
+        _row(1, 1, [11, 10, 21, 20], 0.42, 0.65, 0.55, 0.45, "tracker"),
+        _row(3, 1, [12, 10, 22, 20], 0.44, 0.75, 0.70, 0.30, "tracker"),
+    ]
+    diag.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    gt = tmp_path / "gt.csv"
+    with gt.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["video_path", "frame_id", "x1", "y1", "x2", "y2", "class", "tag"])
+        writer.writerow([str(tmp_path / "seq001" / "visible.mp4"), 1, 11, 10, 21, 20, "drone", "tiny"])
+
+    result = build_tracklet_dataset([diag], gt, tmp_path / "tracklets")
+    with result.csv_path.open("r", encoding="utf-8", newline="") as f:
+        out_rows = list(csv.DictReader(f))
+
+    assert "score_slope" in out_rows[0]
+    assert "background_dominance_longest_streak" in out_rows[0]
+    assert "temporal_over_background_longest_streak" in out_rows[0]
+    assert float(out_rows[0]["score_slope"]) > 0
+    assert float(out_rows[0]["max_frame_gap"]) == 1.0
+    assert float(out_rows[0]["background_dominance_longest_streak"]) == 1.0
+    assert float(out_rows[0]["temporal_over_background_longest_streak"]) == 2.0
+
+
 def test_apply_tracklet_filter_rewrites_final_predictions(tmp_path):
     run_dir = tmp_path / "seq001"
     run_dir.mkdir()
