@@ -40,6 +40,7 @@ from qstr_dronedet.evaluation.fusion_calibration import calibrate_fusion_from_di
 from qstr_dronedet.evaluation.frame_failure_analysis import analyze_frame_failures
 from qstr_dronedet.evaluation.stage_b_benchmark import run_stage_b_oracle_benchmark
 from qstr_dronedet.evaluation.tracker_benchmark import run_tracker_oracle_benchmark
+from qstr_dronedet.evaluation.tracklet_filter_sweep import run_tracklet_filter_sweep
 from qstr_dronedet.features.roi import crop_with_context, extract_temporal_tube
 from qstr_dronedet.fusion.modes import determine_mode
 from qstr_dronedet.fusion.rule_fusion import fuse_rule_based
@@ -1257,6 +1258,24 @@ def cmd_analyze_frame_failures(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def cmd_sweep_tracklet_filter(args: argparse.Namespace) -> None:
+    summary = run_tracklet_filter_sweep(
+        args.run_roots,
+        args.gt,
+        args.weights,
+        args.out,
+        profile=args.profile,
+        classifier_thresholds=args.classifier_thresholds,
+        promotion_score_floors=args.promotion_score_floors,
+        promotion_max_backgrounds=args.promotion_max_backgrounds,
+        promotion_min_branch_drone=args.promotion_min_branch_drone,
+        score_threshold=args.score_threshold,
+        iou_threshold=args.iou_threshold,
+        max_frames=args.max_frames,
+    )
+    print(json.dumps(summary, indent=2))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="qstr-dronedet", description="QSTR-DroneDet runnable research MVP")
     sub = parser.add_subparsers(dest="cmd")
@@ -1729,6 +1748,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--iou-threshold", type=float, default=0.3)
     p.add_argument("--max-frames", type=int, default=None)
     p.set_defaults(func=cmd_analyze_frame_failures)
+
+    p = sub.add_parser("sweep-tracklet-filter")
+    p.add_argument("--run-roots", nargs="+", required=True, help="Train/adapt profile output roots; do not pass frozen test roots for calibration")
+    p.add_argument("--gt", required=True, help="QSTR real CSV covering the run roots")
+    p.add_argument("--weights", required=True, help="Tracklet classifier checkpoint")
+    p.add_argument("--out", required=True)
+    p.add_argument("--profile", default="hard_recovery")
+    p.add_argument("--classifier-thresholds", nargs="+", type=float, default=[0.5, 0.7, 0.85, 0.95])
+    p.add_argument("--promotion-score-floors", nargs="+", type=float, default=[0.20, 0.22, 0.30])
+    p.add_argument("--promotion-max-backgrounds", nargs="+", type=float, default=[0.55, 0.60, 0.68])
+    p.add_argument("--promotion-min-branch-drone", type=float, default=0.40)
+    p.add_argument("--score-threshold", type=float, default=0.2)
+    p.add_argument("--iou-threshold", type=float, default=0.3)
+    p.add_argument("--max-frames", type=int, default=None)
+    p.set_defaults(func=cmd_sweep_tracklet_filter)
     return parser
 
 

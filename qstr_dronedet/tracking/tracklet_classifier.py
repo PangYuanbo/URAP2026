@@ -99,10 +99,14 @@ def _load_gt_csv(path: str | Path, max_frames: int | None = None) -> dict[tuple[
     return out
 
 
-def _row_track_key(row: dict[str, Any]) -> str | None:
+def _row_track_key(row: dict[str, Any], scope_by_seq: bool = True) -> str | None:
     track_id = row.get("track_id")
     if track_id is None or track_id == "":
         return None
+    if scope_by_seq:
+        seq = row.get("seq")
+        if seq is not None and seq != "":
+            return f"{seq}:{track_id}"
     return str(track_id)
 
 
@@ -224,7 +228,7 @@ def build_tracklet_dataset(
         for row in _load_jsonl(diag_path):
             if max_frames is not None and int(row.get("frame_id", -1)) >= max_frames:
                 continue
-            key = _row_track_key(row)
+            key = _row_track_key(row, scope_by_seq=False)
             if key is None:
                 continue
             tracklets.setdefault((seq, key), []).append(row)
@@ -305,6 +309,52 @@ def apply_tracklet_filter_to_infer_outputs(
     diag_path = Path(diagnostics_path)
     pred_rows = _load_jsonl(pred_path)
     diag_rows = _load_jsonl(diag_path)
+    filtered_pred_rows, filtered_diag_rows, summary = filter_infer_rows_with_tracklet_classifier(
+        pred_rows,
+        diag_rows,
+        weights,
+        threshold=threshold,
+        untracked_policy=untracked_policy,
+        promote_positive_tracklets=promote_positive_tracklets,
+        promotion_score_floor=promotion_score_floor,
+        promotion_min_branch_drone=promotion_min_branch_drone,
+        promotion_max_background=promotion_max_background,
+    )
+
+    raw_pred_path = pred_path.with_name("predictions_raw.jsonl")
+    raw_diag_path = diag_path.with_name("diagnostics_raw.jsonl")
+    pred_path.replace(raw_pred_path)
+    diag_path.replace(raw_diag_path)
+    with pred_path.open("w", encoding="utf-8") as f:
+        for row in filtered_pred_rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    with diag_path.open("w", encoding="utf-8") as f:
+        for row in filtered_diag_rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    summary.update(
+        {
+            "raw_predictions_path": str(raw_pred_path),
+            "raw_diagnostics_path": str(raw_diag_path),
+            "predictions_path": str(pred_path),
+            "diagnostics_path": str(diag_path),
+        }
+    )
+    (pred_path.parent / "tracklet_filter_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return summary
+
+
+def filter_infer_rows_with_tracklet_classifier(
+    pred_rows: list[dict[str, Any]],
+    diag_rows: list[dict[str, Any]],
+    weights: str | Path,
+    threshold: float = 0.5,
+    untracked_policy: str = "keep",
+    promote_positive_tracklets: bool = True,
+    promotion_score_floor: float = 0.22,
+    promotion_min_branch_drone: float = 0.40,
+    promotion_max_background: float = 0.68,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     scores = score_tracklets_from_rows(diag_rows, weights, threshold=threshold)
 
     def update_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -366,17 +416,6 @@ def apply_tracklet_filter_to_infer_outputs(
     filtered_pred_rows = [update_row(row) for row in pred_rows]
     filtered_diag_rows = [update_row(row) for row in diag_rows]
 
-    raw_pred_path = pred_path.with_name("predictions_raw.jsonl")
-    raw_diag_path = diag_path.with_name("diagnostics_raw.jsonl")
-    pred_path.replace(raw_pred_path)
-    diag_path.replace(raw_diag_path)
-    with pred_path.open("w", encoding="utf-8") as f:
-        for row in filtered_pred_rows:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    with diag_path.open("w", encoding="utf-8") as f:
-        for row in filtered_diag_rows:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
     raw_drone = sum(1 for row in pred_rows if row.get("predicted_class") == "drone")
     filtered_drone = sum(1 for row in filtered_pred_rows if row.get("predicted_class") == "drone")
     rejected = raw_drone - filtered_drone
@@ -392,13 +431,8 @@ def apply_tracklet_filter_to_infer_outputs(
         "raw_drone_predictions": raw_drone,
         "filtered_drone_predictions": filtered_drone,
         "rejected_drone_predictions": rejected,
-        "raw_predictions_path": str(raw_pred_path),
-        "raw_diagnostics_path": str(raw_diag_path),
-        "predictions_path": str(pred_path),
-        "diagnostics_path": str(diag_path),
     }
-    (pred_path.parent / "tracklet_filter_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    return summary
+    return filtered_pred_rows, filtered_diag_rows, summary
 
 
 def _coerce_feature(row: dict[str, str], key: str) -> float:
