@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import json
 from dataclasses import asdict
@@ -11,7 +12,7 @@ import cv2
 import numpy as np
 
 from qstr_dronedet.candidates import candidates_from_motion, candidates_from_yolo, candidates_from_yolo_tiled, merge_candidates
-from qstr_dronedet.candidates.merge import bbox_iou, center_distance
+from qstr_dronedet.candidates.merge import bbox_iou, center_distance, nms_candidates
 from qstr_dronedet.candidates.yolo_p2_train import (
     build_class_agnostic_yolo_dataset,
     build_tiled_class_agnostic_yolo_dataset,
@@ -38,6 +39,7 @@ from qstr_dronedet.data_augment import (
 from qstr_dronedet.evaluation.metrics import evaluate_predictions
 from qstr_dronedet.evaluation.fusion_calibration import calibrate_fusion_from_diagnostics
 from qstr_dronedet.evaluation.frame_failure_analysis import analyze_frame_failures
+from qstr_dronedet.evaluation.proposal_stage_b import evaluate_crop_recognizer_on_proposals
 from qstr_dronedet.evaluation.stage_b_benchmark import run_stage_b_oracle_benchmark
 from qstr_dronedet.evaluation.tracker_benchmark import run_tracker_oracle_benchmark
 from qstr_dronedet.evaluation.tracklet_filter_sweep import run_tracklet_filter_sweep
@@ -53,6 +55,7 @@ from qstr_dronedet.real_data import (
     build_real_detector_proposal_stage_b_dataset,
     build_real_yolo_candidate_dataset,
     ensure_real_data_layout,
+    export_ard100_annotations,
     export_anti_uav300_subset_from_zip,
     extract_real_annotated_frames,
 )
@@ -99,6 +102,19 @@ def _limit_candidates(candidates: list[DetectionCandidate], limit: int | None) -
     if limit is None or limit <= 0 or len(candidates) <= limit:
         return list(candidates)
     return sorted(candidates, key=lambda c: c.objectness, reverse=True)[:limit]
+
+
+def _budget_candidates(
+    candidates: list[DetectionCandidate],
+    nms_iou: float | None = None,
+    top_k: int | None = None,
+) -> list[DetectionCandidate]:
+    out = list(candidates)
+    if nms_iou is not None and nms_iou > 0:
+        out = nms_candidates(out, iou_threshold=nms_iou)
+    if top_k is not None and top_k > 0:
+        out = _limit_candidates(out, top_k)
+    return out
 
 
 def _filter_candidates_by_box_size(
@@ -668,10 +684,12 @@ def cmd_build_crop_dataset(args: argparse.Namespace) -> None:
 
 def cmd_train_recognizer(args: argparse.Namespace) -> None:
     if args.type == "crop":
-        train_crop_recognizer(args.data, args.out, args.epochs, args.balance, args.target_mode)
+        train_crop_recognizer(args.data, args.out, args.epochs, args.balance, args.target_mode, args.pretrained)
     elif args.type == "temporal":
-        train_temporal_recognizer(args.data, args.out, args.epochs, args.balance, args.target_mode)
+        train_temporal_recognizer(args.data, args.out, args.epochs, args.balance, args.target_mode, args.pretrained)
     elif args.type == "feature":
+        if args.pretrained:
+            raise ValueError("--pretrained is currently supported for crop and temporal recognizers only")
         train_feature_recognizer(args.data, args.out, args.epochs, args.target_mode)
     else:
         raise ValueError(f"Unsupported recognizer type: {args.type}")
@@ -792,6 +810,18 @@ def cmd_stage_b_oracle_benchmark(args: argparse.Namespace) -> None:
         seed=args.seed,
         max_samples=args.max_samples,
         max_hard_negatives=args.max_hard_negatives,
+    )
+    print(json.dumps(summary, indent=2))
+
+
+def cmd_eval_proposal_stage_b(args: argparse.Namespace) -> None:
+    summary = evaluate_crop_recognizer_on_proposals(
+        args.manifest,
+        args.crop_weights,
+        args.out,
+        threshold=args.threshold,
+        max_samples=args.max_samples,
+        batch_size=args.batch_size,
     )
     print(json.dumps(summary, indent=2))
 
@@ -1161,6 +1191,280 @@ def cmd_stage_a_yolo_recall(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def _load_stage_a_real_frame(row: dict[str, str], frames_root: Path | None, cap_cache: dict[str, cv2.VideoCapture]) -> np.ndarray:
+    frame_path = row.get("frame_path")
+    if frame_path:
+        path = Path(frame_path)
+        if not path.is_absolute() and frames_root is not None:
+            path = frames_root / path
+        frame = cv2.imread(str(path))
+        if frame is None:
+            raise FileNotFoundError(f"Could not read frame image: {path}")
+        return frame
+
+    video_path = row.get("video_path") or row.get("source_video")
+    if not video_path:
+        raise ValueError("Real Stage A recall rows need frame_path or video_path/source_video")
+    frame_id = int(float(row.get("frame_id", "0")))
+    cap = cap_cache.get(video_path)
+    if cap is None:
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            raise FileNotFoundError(f"Could not open video: {video_path}")
+        cap_cache[video_path] = cap
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_id)
+    ok, frame = cap.read()
+    if not ok:
+        raise RuntimeError(f"Could not read {video_path} frame {frame_id}")
+    return frame
+
+
+def cmd_stage_a_real_yolo_recall(args: argparse.Namespace) -> None:
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    frames_root = Path(args.frames_root) if args.frames_root else None
+
+    with Path(args.annotations).open("r", encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    if args.class_name:
+        rows = [r for r in rows if r.get("class") == args.class_name]
+    if args.aug_speed:
+        allowed = set(args.aug_speed)
+        rows = [r for r in rows if r.get("aug_speed") in allowed]
+
+    cap_cache: dict[str, cv2.VideoCapture] = {}
+    rows_out: list[dict[str, Any]] = []
+    counters: dict[str, dict[str, int]] = {}
+    raw_candidate_counts: list[int] = []
+    budget_candidate_counts: list[int] = []
+
+    def bump(group: str, total_inc: int, iou_inc: int, center_inc: int) -> None:
+        item = counters.setdefault(group, {"total": 0, "hit_iou": 0, "hit_center": 0})
+        item["total"] += total_inc
+        item["hit_iou"] += iou_inc
+        item["hit_center"] += center_inc
+
+    try:
+        for idx, row in enumerate(rows):
+            if args.max_frames is not None and idx >= args.max_frames:
+                break
+            if idx % max(1, int(args.frame_stride)) != 0:
+                continue
+            gt = (float(row["x1"]), float(row["y1"]), float(row["x2"]), float(row["y2"]))
+            frame = _load_stage_a_real_frame(row, frames_root, cap_cache)
+            raw_cands = candidates_from_yolo_tiled(
+                frame,
+                args.yolo_weights,
+                tile_size=args.yolo_tile_size,
+                stride=args.yolo_tile_stride,
+                conf=args.yolo_conf,
+                device=args.device,
+                max_det=args.max_det,
+            )
+            cands = _budget_candidates(raw_cands, args.proposal_nms_iou, args.proposal_top_k)
+            raw_candidate_counts.append(len(raw_cands))
+            budget_candidate_counts.append(len(cands))
+            best_iou = max((bbox_iou(c.bbox_xyxy, gt) for c in cands), default=0.0)
+            best_center = min((center_distance(c.bbox_xyxy, gt) for c in cands), default=float("inf"))
+            ok_iou = best_iou >= args.match_iou
+            ok_center = best_center <= args.match_center_px
+            iou_inc = int(ok_iou)
+            center_inc = int(ok_center)
+            bump("all", 1, iou_inc, center_inc)
+            bump(f"tag:{row.get('tag', 'unknown')}", 1, iou_inc, center_inc)
+            if row.get("aug_speed"):
+                bump(f"aug_speed:{row.get('aug_speed')}", 1, iou_inc, center_inc)
+            rows_out.append(
+                {
+                    "row_index": idx,
+                    "video": row.get("video_path") or row.get("source_video"),
+                    "frame_path": row.get("frame_path"),
+                    "frame_id": int(float(row.get("frame_id", idx))),
+                    "class": row.get("class"),
+                    "tag": row.get("tag"),
+                    "aug_speed": row.get("aug_speed"),
+                    "gt_bbox": list(gt),
+                    "num_candidates_raw": len(raw_cands),
+                    "num_candidates": len(cands),
+                    "best_iou": best_iou,
+                    "best_center_distance": best_center,
+                    "hit_iou": ok_iou,
+                    "hit_center": ok_center,
+                    "top_candidates": [
+                        {"bbox": list(c.bbox_xyxy), "objectness": c.objectness, "source": c.source}
+                        for c in sorted(cands, key=lambda x: x.objectness, reverse=True)[: args.keep_top]
+                    ],
+                }
+            )
+    finally:
+        for cap in cap_cache.values():
+            cap.release()
+
+    breakdown = {
+        key: {
+            **value,
+            "recall_iou": value["hit_iou"] / max(1, value["total"]),
+            "recall_center": value["hit_center"] / max(1, value["total"]),
+        }
+        for key, value in sorted(counters.items())
+    }
+    all_counts = counters.get("all", {"total": 0, "hit_iou": 0, "hit_center": 0})
+    summary = {
+        "annotations": args.annotations,
+        "frames_root": str(frames_root) if frames_root else None,
+        "total_gt_frames": all_counts["total"],
+        "recall_iou": all_counts["hit_iou"] / max(1, all_counts["total"]),
+        "recall_center": all_counts["hit_center"] / max(1, all_counts["total"]),
+        "match_iou": args.match_iou,
+        "match_center_px": args.match_center_px,
+        "yolo_weights": args.yolo_weights,
+        "yolo_conf": args.yolo_conf,
+        "tile_size": args.yolo_tile_size,
+        "tile_stride": args.yolo_tile_stride,
+        "frame_stride": args.frame_stride,
+        "proposal_nms_iou": args.proposal_nms_iou,
+        "proposal_top_k": args.proposal_top_k,
+        "candidate_counts": {
+            "raw_mean": float(np.mean(raw_candidate_counts)) if raw_candidate_counts else 0.0,
+            "raw_p50": float(np.percentile(raw_candidate_counts, 50)) if raw_candidate_counts else 0.0,
+            "raw_p90": float(np.percentile(raw_candidate_counts, 90)) if raw_candidate_counts else 0.0,
+            "raw_max": int(max(raw_candidate_counts)) if raw_candidate_counts else 0,
+            "budget_mean": float(np.mean(budget_candidate_counts)) if budget_candidate_counts else 0.0,
+            "budget_p50": float(np.percentile(budget_candidate_counts, 50)) if budget_candidate_counts else 0.0,
+            "budget_p90": float(np.percentile(budget_candidate_counts, 90)) if budget_candidate_counts else 0.0,
+            "budget_max": int(max(budget_candidate_counts)) if budget_candidate_counts else 0,
+        },
+        "breakdown": breakdown,
+    }
+    with (out / "stage_a_real_yolo_recall.jsonl").open("w", encoding="utf-8") as f:
+        for row in rows_out:
+            f.write(json.dumps(_jsonable(row), ensure_ascii=False) + "\n")
+    (out / "summary.json").write_text(json.dumps(_jsonable(summary), indent=2), encoding="utf-8")
+    print(json.dumps(_jsonable(summary), indent=2))
+
+
+def _candidate_count_stats(counts: list[int]) -> dict[str, float | int]:
+    return {
+        "mean": float(np.mean(counts)) if counts else 0.0,
+        "p50": float(np.percentile(counts, 50)) if counts else 0.0,
+        "p90": float(np.percentile(counts, 90)) if counts else 0.0,
+        "p95": float(np.percentile(counts, 95)) if counts else 0.0,
+        "max": int(max(counts)) if counts else 0,
+    }
+
+
+def _load_real_annotation_frames(annotations: str | Path, class_name: str | None = None) -> dict[str, set[int]]:
+    by_video: dict[str, set[int]] = {}
+    with Path(annotations).open("r", encoding="utf-8-sig", newline="") as f:
+        for row in csv.DictReader(f):
+            if class_name and row.get("class") != class_name:
+                continue
+            video = row.get("video_path") or row.get("source_video")
+            if not video:
+                continue
+            by_video.setdefault(video, set()).add(int(float(row.get("frame_id", "0"))))
+    return by_video
+
+
+def _distance_to_sorted_frames(frame_id: int, sorted_frames: list[int]) -> int:
+    pos = bisect.bisect_left(sorted_frames, frame_id)
+    best = 1_000_000_000
+    if pos < len(sorted_frames):
+        best = min(best, abs(sorted_frames[pos] - frame_id))
+    if pos > 0:
+        best = min(best, abs(sorted_frames[pos - 1] - frame_id))
+    return best
+
+
+def cmd_stage_a_real_yolo_fppi(args: argparse.Namespace) -> None:
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    by_video = _load_real_annotation_frames(args.annotations, args.class_name)
+    rows_out: list[dict[str, Any]] = []
+    raw_counts: list[int] = []
+    budget_counts: list[int] = []
+    frames_with_any = 0
+    sampled = 0
+
+    for video_idx, (video, annotated_frames) in enumerate(sorted(by_video.items())):
+        if args.max_videos is not None and video_idx >= args.max_videos:
+            break
+        sorted_ann = sorted(annotated_frames)
+        cap = cv2.VideoCapture(str(video))
+        if not cap.isOpened():
+            raise FileNotFoundError(f"Could not open video: {video}")
+        try:
+            nframes = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            for frame_id in range(0, nframes, max(1, int(args.frame_stride))):
+                if args.max_frames is not None and sampled >= args.max_frames:
+                    break
+                if _distance_to_sorted_frames(frame_id, sorted_ann) <= args.exclude_radius:
+                    continue
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_id)
+                ok, frame = cap.read()
+                if not ok:
+                    continue
+                raw_cands = candidates_from_yolo_tiled(
+                    frame,
+                    args.yolo_weights,
+                    tile_size=args.yolo_tile_size,
+                    stride=args.yolo_tile_stride,
+                    conf=args.yolo_conf,
+                    device=args.device,
+                    max_det=args.max_det,
+                )
+                cands = _budget_candidates(raw_cands, args.proposal_nms_iou, args.proposal_top_k)
+                raw_counts.append(len(raw_cands))
+                budget_counts.append(len(cands))
+                frames_with_any += int(len(cands) > 0)
+                sampled += 1
+                rows_out.append(
+                    {
+                        "video": video,
+                        "frame_id": frame_id,
+                        "distance_to_nearest_gt_frame": _distance_to_sorted_frames(frame_id, sorted_ann),
+                        "num_candidates_raw": len(raw_cands),
+                        "num_candidates": len(cands),
+                        "top_candidates": [
+                            {"bbox": list(c.bbox_xyxy), "objectness": c.objectness, "source": c.source}
+                            for c in sorted(cands, key=lambda x: x.objectness, reverse=True)[: args.keep_top]
+                        ],
+                    }
+                )
+            if args.max_frames is not None and sampled >= args.max_frames:
+                break
+        finally:
+            cap.release()
+
+    summary = {
+        "annotations": args.annotations,
+        "sampled_frames": sampled,
+        "source_videos": len(by_video),
+        "max_videos": args.max_videos,
+        "frame_stride": args.frame_stride,
+        "exclude_radius": args.exclude_radius,
+        "yolo_weights": args.yolo_weights,
+        "yolo_conf": args.yolo_conf,
+        "tile_size": args.yolo_tile_size,
+        "tile_stride": args.yolo_tile_stride,
+        "proposal_nms_iou": args.proposal_nms_iou,
+        "proposal_top_k": args.proposal_top_k,
+        "frames_with_any_proposal": frames_with_any,
+        "frames_with_any_rate": frames_with_any / max(1, sampled),
+        "fppi_budget_mean": float(np.mean(budget_counts)) if budget_counts else 0.0,
+        "candidate_counts": {
+            "raw": _candidate_count_stats(raw_counts),
+            "budget": _candidate_count_stats(budget_counts),
+        },
+        "note": "Frames are unannotated ARD100 frames at least exclude_radius frames away from GT; this is a background-proxy FPPI check, not a dedicated negative dataset.",
+    }
+    with (out / "stage_a_real_yolo_fppi.jsonl").open("w", encoding="utf-8") as f:
+        for row in rows_out:
+            f.write(json.dumps(_jsonable(row), ensure_ascii=False) + "\n")
+    (out / "summary.json").write_text(json.dumps(_jsonable(summary), indent=2), encoding="utf-8")
+    print(json.dumps(_jsonable(summary), indent=2))
+
+
 def cmd_init_real_data_layout(args: argparse.Namespace) -> None:
     dirs = ensure_real_data_layout(args.root)
     print("Created/verified real data layout:")
@@ -1217,6 +1521,22 @@ def cmd_export_anti_uav300_subset(args: argparse.Namespace) -> None:
     print(f"Wrote summary: {result.summary_json}")
 
 
+def cmd_export_ard100_annotations(args: argparse.Namespace) -> None:
+    result = export_ard100_annotations(
+        args.root,
+        args.out,
+        annotations_zip=args.annotations_zip,
+        split=args.split,
+        frame_stride=args.frame_stride,
+        max_frames_per_sequence=args.max_frames_per_sequence,
+        tiny_side_px=args.tiny_side_px,
+        default_tag=args.default_tag,
+    )
+    print(f"Wrote annotations: {result.annotations_csv}")
+    print(f"Wrote manifest: {result.manifest_csv}")
+    print(f"Wrote summary: {result.summary_json}")
+
+
 def cmd_build_real_stage_b_dataset(args: argparse.Namespace) -> None:
     result = build_real_stage_b_datasets(
         args.annotations,
@@ -1248,6 +1568,7 @@ def cmd_build_real_detector_proposal_stage_b(args: argparse.Namespace) -> None:
         max_samples=args.max_samples,
         max_proposals_per_frame=args.max_proposals_per_frame,
         max_fallback_proposals_per_frame=args.max_fallback_proposals_per_frame,
+        proposal_nms_iou=args.proposal_nms_iou,
         max_negatives_per_frame=args.max_negatives_per_frame,
         match_iou=args.match_iou,
         match_center_px=args.match_center_px,
@@ -1490,6 +1811,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--epochs", type=int, default=10)
     p.add_argument("--balance", choices=["sampler", "class_weight", "none"], default="sampler")
     p.add_argument("--target-mode", choices=["multiclass", "drone_binary"], default="multiclass", help="Use drone_binary to train drone vs non-drone while keeping the 8-class output head")
+    p.add_argument("--pretrained", default=None, help="Optional recognizer checkpoint for fine-tuning")
     p.set_defaults(func=cmd_train_recognizer)
 
     p = sub.add_parser("build-yolo-candidate-dataset")
@@ -1602,6 +1924,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-samples", type=int, default=None)
     p.add_argument("--max-hard-negatives", type=int, default=None)
     p.set_defaults(func=cmd_stage_b_oracle_benchmark)
+
+    p = sub.add_parser("eval-proposal-stage-b")
+    p.add_argument("--manifest", required=True, help="proposal_manifest.jsonl from build-real-detector-proposal-stage-b")
+    p.add_argument("--crop-weights", required=True, help="CropRecognizer .pt checkpoint")
+    p.add_argument("--out", required=True)
+    p.add_argument("--threshold", type=float, default=0.5)
+    p.add_argument("--max-samples", type=int, default=None)
+    p.add_argument("--batch-size", type=int, default=64)
+    p.set_defaults(func=cmd_eval_proposal_stage_b)
 
     p = sub.add_parser("tracker-oracle-benchmark")
     p.add_argument("--metadata", nargs="+", required=True, help="JSON metadata files or glob patterns with oracle boxes")
@@ -1793,6 +2124,46 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--keep-top", type=int, default=5)
     p.set_defaults(func=cmd_stage_a_yolo_recall)
 
+    p = sub.add_parser("stage-a-real-yolo-recall")
+    p.add_argument("--annotations", required=True, help="QSTR real CSV or extracted frame_annotations.csv")
+    p.add_argument("--frames-root", default=None, help="Root for relative frame_path entries")
+    p.add_argument("--out", required=True)
+    p.add_argument("--yolo-weights", required=True)
+    p.add_argument("--yolo-conf", type=float, default=0.05)
+    p.add_argument("--yolo-tile-size", type=int, default=256)
+    p.add_argument("--yolo-tile-stride", type=int, default=192)
+    p.add_argument("--device", default=None)
+    p.add_argument("--max-det", type=int, default=300)
+    p.add_argument("--max-frames", type=int, default=None)
+    p.add_argument("--frame-stride", type=int, default=1)
+    p.add_argument("--match-iou", type=float, default=0.3)
+    p.add_argument("--match-center-px", type=float, default=16.0)
+    p.add_argument("--keep-top", type=int, default=5)
+    p.add_argument("--class-name", default="drone")
+    p.add_argument("--aug-speed", nargs="*", default=None, help="Optional aug_speed values to include, e.g. speedx2 speedx4")
+    p.add_argument("--proposal-nms-iou", type=float, default=None, help="Optional global candidate NMS before recall/budget metrics")
+    p.add_argument("--proposal-top-k", type=int, default=None, help="Optional per-frame top-k proposal budget after NMS")
+    p.set_defaults(func=cmd_stage_a_real_yolo_recall)
+
+    p = sub.add_parser("stage-a-real-yolo-fppi")
+    p.add_argument("--annotations", required=True, help="QSTR real CSV used to exclude GT frames")
+    p.add_argument("--out", required=True)
+    p.add_argument("--yolo-weights", required=True)
+    p.add_argument("--yolo-conf", type=float, default=0.05)
+    p.add_argument("--yolo-tile-size", type=int, default=256)
+    p.add_argument("--yolo-tile-stride", type=int, default=192)
+    p.add_argument("--device", default=None)
+    p.add_argument("--max-det", type=int, default=300)
+    p.add_argument("--max-frames", type=int, default=None)
+    p.add_argument("--max-videos", type=int, default=None)
+    p.add_argument("--frame-stride", type=int, default=10)
+    p.add_argument("--exclude-radius", type=int, default=20, help="Skip frames within this many frames of any GT annotation")
+    p.add_argument("--keep-top", type=int, default=5)
+    p.add_argument("--class-name", default="drone")
+    p.add_argument("--proposal-nms-iou", type=float, default=None)
+    p.add_argument("--proposal-top-k", type=int, default=None)
+    p.set_defaults(func=cmd_stage_a_real_yolo_fppi)
+
     p = sub.add_parser("init-real-data-layout")
     p.add_argument("--root", default="data/real")
     p.set_defaults(func=cmd_init_real_data_layout)
@@ -1831,6 +2202,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-frames-per-sequence", type=int, default=80)
     p.set_defaults(func=cmd_export_anti_uav300_subset)
 
+    p = sub.add_parser("export-ard100-annotations")
+    p.add_argument("--root", required=True, help="ARD100 root containing train_videos, test_videos, and annotations.zip")
+    p.add_argument("--out", required=True)
+    p.add_argument("--annotations-zip", default=None, help="Optional explicit annotations.zip path")
+    p.add_argument("--split", choices=["all", "train", "test"], default="all")
+    p.add_argument("--frame-stride", type=int, default=1)
+    p.add_argument("--max-frames-per-sequence", type=int, default=None)
+    p.add_argument("--tiny-side-px", type=float, default=24.0)
+    p.add_argument("--default-tag", choices=sorted(["static_hovering", "fast_target", "bad_alignment", "tiny", "hard_negative"]), default="fast_target")
+    p.set_defaults(func=cmd_export_ard100_annotations)
+
     p = sub.add_parser("build-real-stage-b-dataset")
     p.add_argument("--annotations", required=True, help="CSV with video_path,frame_id,x1,y1,x2,y2,class,tag")
     p.add_argument("--out", required=True)
@@ -1856,6 +2238,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-samples", type=int, default=None)
     p.add_argument("--max-proposals-per-frame", type=int, default=8)
     p.add_argument("--max-fallback-proposals-per-frame", type=int, default=4)
+    p.add_argument("--proposal-nms-iou", type=float, default=0.35)
     p.add_argument("--max-negatives-per-frame", type=int, default=4)
     p.add_argument("--match-iou", type=float, default=0.1)
     p.add_argument("--match-center-px", type=float, default=24.0)

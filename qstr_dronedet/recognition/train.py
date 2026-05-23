@@ -62,11 +62,16 @@ def _train(
     lr: float = 1e-3,
     balance: str = "sampler",
     target_mode: str = "multiclass",
+    pretrained: str | Path | None = None,
 ) -> Path:
     if len(dataset) == 0:
         raise ValueError("Dataset is empty; expected class subfolders with images")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"training_device={device}")
+    if pretrained:
+        ckpt = torch.load(pretrained, map_location="cpu")
+        model.load_state_dict(ckpt["state_dict"])
+        print(f"loaded_pretrained={pretrained}")
     model.to(device)
     sampler = _balanced_sampler(dataset, target_mode) if balance == "sampler" else None
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=sampler is None, sampler=sampler)
@@ -102,12 +107,26 @@ def _train(
     return out
 
 
-def train_crop_recognizer(data: str | Path, out: str | Path, epochs: int = 10, balance: str = "sampler", target_mode: str = "multiclass") -> Path:
-    return _train(CropRecognizer(), CropFolderDataset(data), out, epochs=epochs, balance=balance, target_mode=target_mode)
+def train_crop_recognizer(
+    data: str | Path,
+    out: str | Path,
+    epochs: int = 10,
+    balance: str = "sampler",
+    target_mode: str = "multiclass",
+    pretrained: str | Path | None = None,
+) -> Path:
+    return _train(CropRecognizer(), CropFolderDataset(data), out, epochs=epochs, balance=balance, target_mode=target_mode, pretrained=pretrained)
 
 
-def train_temporal_recognizer(data: str | Path, out: str | Path, epochs: int = 10, balance: str = "sampler", target_mode: str = "multiclass") -> Path:
-    return _train(TemporalRecognizer(), TemporalFolderDataset(data), out, epochs=epochs, balance=balance, target_mode=target_mode)
+def train_temporal_recognizer(
+    data: str | Path,
+    out: str | Path,
+    epochs: int = 10,
+    balance: str = "sampler",
+    target_mode: str = "multiclass",
+    pretrained: str | Path | None = None,
+) -> Path:
+    return _train(TemporalRecognizer(), TemporalFolderDataset(data), out, epochs=epochs, balance=balance, target_mode=target_mode, pretrained=pretrained)
 
 
 def train_feature_recognizer(data: str | Path, out: str | Path, epochs: int = 10, target_mode: str = "multiclass") -> Path:

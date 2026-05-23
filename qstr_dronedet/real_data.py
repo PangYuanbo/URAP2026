@@ -6,6 +6,7 @@ import json
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import cv2
 import numpy as np
@@ -49,6 +50,13 @@ class AntiUAVSubsetResult:
     annotations_csv: Path
     manifest_csv: Path
     extracted_root: Path
+    summary_json: Path
+
+
+@dataclass(frozen=True)
+class ARD100ExportResult:
+    annotations_csv: Path
+    manifest_csv: Path
     summary_json: Path
 
 
@@ -234,6 +242,165 @@ def export_anti_uav300_subset_from_zip(
     return AntiUAVSubsetResult(annotations_csv, manifest_csv, extracted_root, summary_json)
 
 
+def _ard100_sequence_from_xml_name(name: str) -> tuple[str, int] | None:
+    stem = Path(name).stem
+    if "_" not in stem:
+        return None
+    seq, frame_text = stem.rsplit("_", 1)
+    try:
+        return seq, int(frame_text)
+    except ValueError:
+        return None
+
+
+def _ard100_video_for_sequence(root: Path, seq: str) -> tuple[Path | None, str]:
+    train_path = root / "train_videos" / f"{seq}.mp4"
+    if train_path.exists():
+        return train_path, "train"
+    test_path = root / "test_videos" / f"{seq}.mp4"
+    if test_path.exists():
+        return test_path, "test"
+    return None, "unknown"
+
+
+def export_ard100_annotations(
+    root: str | Path,
+    out: str | Path,
+    annotations_zip: str | Path | None = None,
+    split: str = "all",
+    frame_stride: int = 1,
+    max_frames_per_sequence: int | None = None,
+    tiny_side_px: float = 24.0,
+    default_tag: str = "fast_target",
+) -> ARD100ExportResult:
+    """Convert ARD100 VOC XML annotations to QSTR's real-video CSV format.
+
+    The ARD100 release stores videos in train_videos/test_videos and VOC-style
+    XML boxes inside annotations.zip. This exporter reads XML directly from the
+    zip to avoid expanding many small files.
+    """
+    root = Path(root)
+    out = Path(out)
+    annotations_zip = Path(annotations_zip) if annotations_zip is not None else root / "annotations.zip"
+    if split not in {"all", "train", "test"}:
+        raise ValueError("split must be one of all, train, test")
+    if default_tag not in REAL_TAGS:
+        raise ValueError(f"default_tag must be one of {sorted(REAL_TAGS)}")
+    if not annotations_zip.exists():
+        raise FileNotFoundError(f"ARD100 annotations zip not found: {annotations_zip}")
+
+    out.mkdir(parents=True, exist_ok=True)
+    annotations_csv = out / "qstr_ard100_boxes.csv"
+    manifest_csv = out / "recording_manifest.csv"
+    summary_json = out / "summary.json"
+
+    rows: list[dict[str, object]] = []
+    manifest: dict[str, dict[str, object]] = {}
+    skipped_missing_video = 0
+    skipped_split = 0
+    per_sequence_frames: dict[str, int] = {}
+
+    with zipfile.ZipFile(annotations_zip, "r") as zipf:
+        xml_names = sorted(name for name in zipf.namelist() if name.lower().endswith(".xml"))
+        for xml_name in xml_names:
+            parsed = _ard100_sequence_from_xml_name(xml_name)
+            if parsed is None:
+                continue
+            seq, frame_id = parsed
+            video_path, seq_split = _ard100_video_for_sequence(root, seq)
+            if video_path is None:
+                skipped_missing_video += 1
+                continue
+            if split != "all" and seq_split != split:
+                skipped_split += 1
+                continue
+            if frame_id % max(1, int(frame_stride)) != 0:
+                continue
+            if max_frames_per_sequence is not None and per_sequence_frames.get(seq, 0) >= max_frames_per_sequence:
+                continue
+
+            root_xml = ET.fromstring(zipf.read(xml_name))
+            object_rows = []
+            for obj in root_xml.findall("object"):
+                box = obj.find("bndbox")
+                if box is None:
+                    continue
+                try:
+                    x1 = float(box.findtext("xmin", "0"))
+                    y1 = float(box.findtext("ymin", "0"))
+                    x2 = float(box.findtext("xmax", "0"))
+                    y2 = float(box.findtext("ymax", "0"))
+                except ValueError:
+                    continue
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                side = max(x2 - x1, y2 - y1)
+                tag = "tiny" if side <= tiny_side_px else default_tag
+                object_rows.append(
+                    {
+                        "video_path": str(video_path),
+                        "frame_id": frame_id,
+                        "x1": x1,
+                        "y1": y1,
+                        "x2": x2,
+                        "y2": y2,
+                        "class": "drone",
+                        "tag": tag,
+                    }
+                )
+            if not object_rows:
+                continue
+            rows.extend(object_rows)
+            per_sequence_frames[seq] = per_sequence_frames.get(seq, 0) + 1
+            current = manifest.setdefault(
+                seq,
+                {
+                    "video_path": str(video_path),
+                    "scenario": default_tag,
+                    "camera_motion": "unknown",
+                    "target_motion": "uav_to_uav_drone",
+                    "notes": f"ARD100 {seq_split} sequence; VOC XML annotations",
+                    "_tiny": 0,
+                    "_fast": 0,
+                },
+            )
+            if any(r["tag"] == "tiny" for r in object_rows):
+                current["_tiny"] = int(current["_tiny"]) + 1
+            else:
+                current["_fast"] = int(current["_fast"]) + 1
+
+    for item in manifest.values():
+        if int(item.pop("_tiny")) > int(item.pop("_fast")):
+            item["scenario"] = "tiny"
+
+    with annotations_csv.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["video_path", "frame_id", "x1", "y1", "x2", "y2", "class", "tag"])
+        writer.writeheader()
+        writer.writerows(rows)
+    with manifest_csv.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["video_path", "scenario", "camera_motion", "target_motion", "notes"])
+        writer.writeheader()
+        writer.writerows(manifest.values())
+
+    summary = {
+        "root": str(root),
+        "annotations_zip": str(annotations_zip),
+        "split": split,
+        "frame_stride": frame_stride,
+        "max_frames_per_sequence": max_frames_per_sequence,
+        "tiny_side_px": tiny_side_px,
+        "default_tag": default_tag,
+        "num_sequences": len(manifest),
+        "num_boxes": len(rows),
+        "skipped_missing_video_xml": skipped_missing_video,
+        "skipped_split_xml": skipped_split,
+        "annotations_csv": str(annotations_csv),
+        "manifest_csv": str(manifest_csv),
+    }
+    summary_json.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return ARD100ExportResult(annotations_csv, manifest_csv, summary_json)
+
+
 def _resolve_video_path(video_path: str, video_root: Path | None) -> Path:
     path = Path(video_path)
     if not path.is_absolute() and video_root is not None:
@@ -407,6 +574,7 @@ def build_real_detector_proposal_stage_b_dataset(
     max_samples: int | None = None,
     max_proposals_per_frame: int = 8,
     max_fallback_proposals_per_frame: int = 4,
+    proposal_nms_iou: float = 0.35,
     max_negatives_per_frame: int = 4,
     match_iou: float = 0.1,
     match_center_px: float = 24.0,
@@ -554,7 +722,7 @@ def build_real_detector_proposal_stage_b_dataset(
             device=device,
             max_det=max(100, int(max_proposals_per_frame) * 4),
         )
-        proposals = nms_candidates(proposals, iou_threshold=0.35)[: max(1, int(max_proposals_per_frame))]
+        proposals = nms_candidates(proposals, iou_threshold=proposal_nms_iou)[: max(1, int(max_proposals_per_frame))]
         if fallback_yolo_weights is not None:
             fallback_proposals = candidates_from_yolo_tiled(
                 frame,
@@ -565,11 +733,11 @@ def build_real_detector_proposal_stage_b_dataset(
                 device=device,
                 max_det=max(100, int(max_fallback_proposals_per_frame) * 4),
             )
-            fallback_proposals = nms_candidates(fallback_proposals, iou_threshold=0.35)[: max(0, int(max_fallback_proposals_per_frame))]
+            fallback_proposals = nms_candidates(fallback_proposals, iou_threshold=proposal_nms_iou)[: max(0, int(max_fallback_proposals_per_frame))]
             for cand in fallback_proposals:
                 cand.extra["base_source"] = cand.source
                 cand.source = f"{cand.source}_fallback"
-            proposals = nms_candidates(proposals + fallback_proposals, iou_threshold=0.35)[: max(1, int(max_proposals_per_frame) + int(max_fallback_proposals_per_frame))]
+            proposals = nms_candidates(proposals + fallback_proposals, iou_threshold=proposal_nms_iou)[: max(1, int(max_proposals_per_frame) + int(max_fallback_proposals_per_frame))]
         matched_positive = False
         negatives_this_frame = 0
         for cand_idx, cand in enumerate(proposals):
@@ -640,6 +808,7 @@ def build_real_detector_proposal_stage_b_dataset(
         "annotations_csv": str(annotations_csv),
         "yolo_weights": str(yolo_weights),
         "fallback_yolo_weights": str(fallback_yolo_weights) if fallback_yolo_weights is not None else None,
+        "proposal_nms_iou": proposal_nms_iou,
         "non_drone_label_mode": non_drone_label_mode,
         "artifact_score_threshold": artifact_score_threshold,
         "high_score_fp_threshold": high_score_fp_threshold,
@@ -688,35 +857,56 @@ def extract_real_annotated_frames(
         frame_id = int(float(row["frame_id"]))
         grouped.setdefault((video, frame_id), []).append(row)
 
+    grouped_by_video: dict[Path, dict[int, list[dict[str, str]]]] = {}
+    for (video, frame_id), frame_rows in grouped.items():
+        grouped_by_video.setdefault(video, {})[frame_id] = frame_rows
+
     out_rows: list[dict[str, str]] = []
-    for (video, frame_id), frame_rows in sorted(grouped.items(), key=lambda item: (str(item[0][0]), item[0][1])):
+    for video in sorted(grouped_by_video, key=str):
         if not video.exists():
             raise FileNotFoundError(f"Video not found: {video}")
-        frame_path = frames_dir / _frame_file_name(video, frame_id)
-        if not frame_path.exists():
-            cap = cv2.VideoCapture(str(video))
-            if not cap.isOpened():
-                raise FileNotFoundError(f"Could not open video: {video}")
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_id)
-            ok, frame = cap.read()
-            cap.release()
-            if not ok:
-                raise ValueError(f"Could not read frame {frame_id} from {video}")
-            cv2.imwrite(str(frame_path), frame)
-        for row in frame_rows:
-            out_rows.append(
-                {
-                    "frame_path": frame_path.name,
-                    "x1": row["x1"],
-                    "y1": row["y1"],
-                    "x2": row["x2"],
-                    "y2": row["y2"],
-                    "class": row["class"].strip(),
-                    "tag": row["tag"].strip(),
-                    "source_video": str(video),
-                    "frame_id": str(frame_id),
-                }
-            )
+        cap: cv2.VideoCapture | None = None
+        current_pos = 0
+        try:
+            for frame_id in sorted(grouped_by_video[video]):
+                frame_rows = grouped_by_video[video][frame_id]
+                frame_path = frames_dir / _frame_file_name(video, frame_id)
+                if not frame_path.exists():
+                    if cap is None:
+                        cap = cv2.VideoCapture(str(video))
+                        if not cap.isOpened():
+                            raise FileNotFoundError(f"Could not open video: {video}")
+                        current_pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+                    if frame_id < current_pos or frame_id - current_pos > 30:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_id)
+                        current_pos = frame_id
+                    frame = None
+                    ok = False
+                    while current_pos <= frame_id:
+                        ok, frame = cap.read()
+                        current_pos += 1
+                        if not ok:
+                            break
+                    if not ok or frame is None:
+                        raise ValueError(f"Could not read frame {frame_id} from {video}")
+                    cv2.imwrite(str(frame_path), frame)
+                for row in frame_rows:
+                    out_rows.append(
+                        {
+                            "frame_path": frame_path.name,
+                            "x1": row["x1"],
+                            "y1": row["y1"],
+                            "x2": row["x2"],
+                            "y2": row["y2"],
+                            "class": row["class"].strip(),
+                            "tag": row["tag"].strip(),
+                            "source_video": str(video),
+                            "frame_id": str(frame_id),
+                        }
+                    )
+        finally:
+            if cap is not None:
+                cap.release()
 
     with out_csv.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(
