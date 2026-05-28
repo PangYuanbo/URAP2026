@@ -44,6 +44,8 @@ def parse_args():
     parser.add_argument("--fps-fallback", type=float, default=29.97)
     parser.add_argument("--max-frames", type=int, default=0, help="0 means all frames.")
     parser.add_argument("--skip-overlay", action="store_true")
+    parser.add_argument("--side-by-side", action="store_true", help="Also render RGB and motion heatmap in one comparison video.")
+    parser.add_argument("--display-width", type=int, default=1280, help="Width of each side in the comparison video.")
     return parser.parse_args()
 
 
@@ -133,6 +135,29 @@ def ensure_video_writer(path, fps, size):
     return cv2.VideoWriter(str(path), fourcc, fps, size)
 
 
+def resize_keep_aspect(img, target_w):
+    h, w = img.shape[:2]
+    if w == target_w:
+        return img
+    target_h = max(2, int(round(h * (target_w / float(w)))))
+    if target_h % 2:
+        target_h += 1
+    return cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
+
+
+def make_side_by_side(rgb_bgr, heat_color, label, target_w):
+    left = resize_keep_aspect(rgb_bgr, target_w)
+    right = resize_keep_aspect(heat_color, target_w)
+    h = min(left.shape[0], right.shape[0])
+    left = left[:h, :]
+    right = right[:h, :]
+    combo = np.concatenate([left, right], axis=1)
+    cv2.putText(combo, "RGB", (20, 42), cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(combo, "YOLOMG motion heatmap", (target_w + 20, 42), cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(combo, label, (20, h - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2, cv2.LINE_AA)
+    return combo
+
+
 def main():
     args = parse_args()
     output_dir = Path(args.output_dir)
@@ -165,10 +190,12 @@ def main():
 
             heatmap_video_path = video_out_dir / f"{video_name}_motion_heatmap.mp4"
             overlay_video_path = video_out_dir / f"{video_name}_motion_overlay.mp4"
+            compare_video_path = video_out_dir / f"{video_name}_rgb_vs_motion_heatmap.mp4"
             manifest_path = video_out_dir / "manifest.txt"
 
             heatmap_writer = None
             overlay_writer = None
+            compare_writer = None
 
             with open(manifest_path, "w", encoding="utf-8") as manifest:
                 manifest.write(f"video={video_name}\n")
@@ -176,6 +203,7 @@ def main():
                 manifest.write(f"hook_layer={args.hook_layer}\n")
                 manifest.write(f"fps={fps:.4f}\n")
                 manifest.write(f"frames={len(items)}\n")
+                manifest.write(f"side_by_side={args.side_by_side}\n")
 
                 for idx, item in enumerate(items, start=1):
                     frame_bgr = cv2.imread(item["image_path"])
@@ -202,20 +230,27 @@ def main():
                     label = f"{video_name} frame {item['frame']:04d} mask {item['mask_frame']:04d}"
                     cv2.putText(overlay, label, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
                     cv2.putText(heat_color, label, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
+                    compare = make_side_by_side(frame_bgr, heat_color, label, args.display_width) if args.side_by_side else None
 
                     if heatmap_writer is None:
                         heatmap_writer = ensure_video_writer(heatmap_video_path, fps, (original_w, original_h))
                         if not args.skip_overlay:
                             overlay_writer = ensure_video_writer(overlay_video_path, fps, (original_w, original_h))
+                        if compare is not None:
+                            compare_writer = ensure_video_writer(compare_video_path, fps, (compare.shape[1], compare.shape[0]))
 
                     heatmap_writer.write(heat_color)
                     if overlay_writer is not None:
                         overlay_writer.write(overlay)
+                    if compare_writer is not None and compare is not None:
+                        compare_writer.write(compare)
 
                     if idx <= 3:
                         cv2.imwrite(str(video_out_dir / f"{video_name}_{item['frame']:04d}_heatmap.jpg"), heat_color)
                         if not args.skip_overlay:
                             cv2.imwrite(str(video_out_dir / f"{video_name}_{item['frame']:04d}_overlay.jpg"), overlay)
+                        if compare is not None:
+                            cv2.imwrite(str(video_out_dir / f"{video_name}_{item['frame']:04d}_rgb_vs_motion_heatmap.jpg"), compare)
 
                     manifest.write(
                         f"{idx}\tframe={item['frame']}\tmask_frame={item['mask_frame']}\timage={item['image_path']}\tmask={item['mask_path']}\n"
@@ -228,6 +263,8 @@ def main():
                 heatmap_writer.release()
             if overlay_writer is not None:
                 overlay_writer.release()
+            if compare_writer is not None:
+                compare_writer.release()
 
             print(f"[DONE] {video_name} -> {video_out_dir}")
     finally:

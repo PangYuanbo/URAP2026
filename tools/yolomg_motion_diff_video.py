@@ -20,6 +20,9 @@ def parse_args():
         default=r"C:\Users\aaron\Desktop\URAP\URAP-UAV-to-UAV-Detection-and-Tracking\papers\YOLOMG\runs\motion_diff_maps_paper\test_02_05",
     )
     parser.add_argument("--fps-fallback", type=float, default=29.97)
+    parser.add_argument("--max-frames", type=int, default=0, help="0 means all frames.")
+    parser.add_argument("--side-by-side", action="store_true")
+    parser.add_argument("--display-width", type=int, default=960)
     return parser.parse_args()
 
 
@@ -83,6 +86,35 @@ def ensure_writer(path, fps, size):
     return cv2.VideoWriter(str(path), fourcc, fps, size)
 
 
+def enhance_motion_for_display(gray):
+    lo, hi = np.percentile(gray, [1, 99.7])
+    if hi <= lo:
+        return np.zeros_like(gray)
+    out = np.clip((gray.astype(np.float32) - lo) / (hi - lo), 0.0, 1.0)
+    out = np.power(out, 0.55)
+    return np.uint8(out * 255.0)
+
+
+def resize_keep_aspect(img, target_w):
+    h, w = img.shape[:2]
+    target_h = max(2, int(round(h * target_w / float(w))))
+    if target_h % 2:
+        target_h += 1
+    return cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
+
+
+def side_by_side(frame_bgr, motion_gray, label, target_w):
+    left = resize_keep_aspect(frame_bgr, target_w)
+    enhanced = enhance_motion_for_display(motion_gray)
+    right = resize_keep_aspect(cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR), target_w)
+    h = min(left.shape[0], right.shape[0])
+    combo = np.concatenate([left[:h], right[:h]], axis=1)
+    cv2.putText(combo, "RGB", (20, 42), cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(combo, "YOLOMG input motion-diff map", (target_w + 20, 42), cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(combo, label, (20, h - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2, cv2.LINE_AA)
+    return combo
+
+
 def main():
     args = parse_args()
     output_dir = Path(args.output_dir)
@@ -95,6 +127,8 @@ def main():
         if not items:
             print(f"[WARN] No frame pairs found for {video_name}")
             continue
+        if args.max_frames and args.max_frames > 0:
+            items = items[: args.max_frames]
 
         video_path = Path(args.video_root) / f"{video_name}.mp4"
         fps = get_video_fps(video_path, args.fps_fallback)
@@ -109,17 +143,20 @@ def main():
         gray_video_path = video_out_dir / f"{video_name}_motion_diff_gray.avi"
         paper_video_path = video_out_dir / f"{video_name}_motion_diff_paper.avi"
         overlay_video_path = video_out_dir / f"{video_name}_motion_diff_overlay.avi"
+        compare_video_path = video_out_dir / f"{video_name}_rgb_vs_motion_diff.avi"
         manifest_path = video_out_dir / "manifest.txt"
 
         gray_writer = ensure_writer(gray_video_path, fps, (w, h))
         paper_writer = ensure_writer(paper_video_path, fps, (w, h))
         overlay_writer = ensure_writer(overlay_video_path, fps, (w, h))
+        compare_writer = None
 
         with open(manifest_path, "w", encoding="utf-8") as manifest:
             manifest.write(f"video={video_name}\n")
             manifest.write("source=ARD100_YOLOMG images2/test motion-difference maps\n")
             manifest.write(f"fps={fps:.4f}\n")
             manifest.write(f"frames={len(items)}\n")
+            manifest.write(f"side_by_side={args.side_by_side}\n")
 
             for idx, item in enumerate(items, start=1):
                 frame_bgr = cv2.imread(item["image_path"])
@@ -130,15 +167,24 @@ def main():
                 motion_color = paper_colorize(motion_gray)
                 gray_bgr = cv2.cvtColor(motion_gray, cv2.COLOR_GRAY2BGR)
                 overlay = overlay_motion(frame_bgr, motion_color)
+                label = f"{video_name} frame {item['frame']:04d} motion {item['motion_frame']:04d}"
+                compare = side_by_side(frame_bgr, motion_gray, label, args.display_width) if args.side_by_side else None
+
+                if compare is not None and compare_writer is None:
+                    compare_writer = ensure_writer(compare_video_path, fps, (compare.shape[1], compare.shape[0]))
 
                 gray_writer.write(gray_bgr)
                 paper_writer.write(motion_color)
                 overlay_writer.write(overlay)
+                if compare_writer is not None and compare is not None:
+                    compare_writer.write(compare)
 
                 if idx <= 3:
                     cv2.imwrite(str(video_out_dir / f"{video_name}_{item['frame']:04d}_motion_gray.jpg"), motion_gray)
                     cv2.imwrite(str(video_out_dir / f"{video_name}_{item['frame']:04d}_motion_paper.jpg"), motion_color)
                     cv2.imwrite(str(video_out_dir / f"{video_name}_{item['frame']:04d}_motion_overlay.jpg"), overlay)
+                    if compare is not None:
+                        cv2.imwrite(str(video_out_dir / f"{video_name}_{item['frame']:04d}_rgb_vs_motion_diff.jpg"), compare)
 
                 manifest.write(
                     f"{idx}\tframe={item['frame']}\tmotion_frame={item['motion_frame']}\timage={item['image_path']}\tmotion={item['motion_path']}\n"
@@ -150,6 +196,8 @@ def main():
         gray_writer.release()
         paper_writer.release()
         overlay_writer.release()
+        if compare_writer is not None:
+            compare_writer.release()
         print(f"[DONE] {video_name} -> {video_out_dir}")
 
 
