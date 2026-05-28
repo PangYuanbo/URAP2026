@@ -6,7 +6,9 @@ param(
     [int]$DisplayWidth = 480,
     [int]$MotionLayer = 3,
     [int]$FusionLayer = 5,
-    [string]$Device = "0"
+    [string]$Device = "0",
+    [string]$List = "D:\URAP_datasets\ARD100_YOLOMG\test.txt",
+    [string]$List2 = "D:\URAP_datasets\ARD100_YOLOMG\test2.txt"
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,7 +36,9 @@ $argList = @(
     "--display-width", "$DisplayWidth",
     "--motion-layer", "$MotionLayer",
     "--fusion-layer", "$FusionLayer",
-    "--device", "$Device"
+    "--device", "$Device",
+    "--test-list", "$List",
+    "--test2-list", "$List2"
 )
 
 $startTime = Get-Date
@@ -58,6 +62,8 @@ $proc.Id | Set-Content -Path $pidFile -Encoding ascii
     "motion_layer=$MotionLayer"
     "fusion_layer=$FusionLayer"
     "device=$Device"
+    "list=$List"
+    "list2=$List2"
     "output_dir=$OutputDir"
     "stdout=$stdoutLog"
     "stderr=$stderrLog"
