@@ -54,14 +54,27 @@ def parse_frame(path_str: str) -> tuple[str, int, str]:
 
 def build_pairs(test_list: list[str], test2_list: list[str], videos: set[str]) -> dict[str, list[dict[str, object]]]:
     out: dict[str, list[dict[str, object]]] = {}
-    for image_path, motion_path in zip(test_list, test2_list):
-        v1, f1, p1 = parse_frame(image_path)
+    motion_by_key: dict[tuple[str, int], str] = {}
+    for motion_path in test2_list:
         v2, f2, p2 = parse_frame(motion_path)
-        if v1 != v2 or v1 not in videos:
+        if v2 in videos:
+            motion_by_key[(v2, f2)] = p2
+
+    skipped = 0
+    for image_path in test_list:
+        v1, f1, p1 = parse_frame(image_path)
+        if v1 not in videos:
             continue
+        p2 = motion_by_key.get((v1, f1))
+        if p2 is None:
+            skipped += 1
+            continue
+        f2 = f1
         out.setdefault(v1, []).append({"frame": f1, "motion_frame": f2, "image_path": p1, "motion_path": p2})
     for items in out.values():
         items.sort(key=lambda x: int(x["frame"]))
+    if skipped:
+        print(f"[WARN] skipped {skipped} RGB frames without same-frame motion maps", flush=True)
     return out
 
 
