@@ -1,9 +1,9 @@
 {
-  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "urap2026",
   "compatibility_date": "2026-05-30",
   "assets": {
-    "directory": "./dist",
+    "directory": "./apps/web/dist",
     "not_found_handling": "single-page-application"
   }
 }
