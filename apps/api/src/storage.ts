@@ -114,10 +114,14 @@ async function readJson<T>(filename: string): Promise<T | null> {
 
 async function listJson<T>(dir: string): Promise<T[]> {
   const files = await readdir(dir);
-  const items = await Promise.all(
-    files
-      .filter((file) => file.endsWith(".json"))
-      .map((file) => readJson<T>(path.join(dir, file)))
-  );
-  return items.filter((item): item is T => Boolean(item));
+  const items: T[] = [];
+
+  for (const file of files) {
+    if (!file.endsWith(".json")) continue;
+
+    const item = await readJson<T>(path.join(dir, file));
+    if (item !== null) items.push(item);
+  }
+
+  return items;
 }
