@@ -41,6 +41,14 @@ Settings:
 
 After deploy, open the Cloudflare URL, enter the Railway API URL, the task id, and the annotator name.
 
+The frontend also ships a YOLOMG Drive-linked video gallery as a static subpage:
+
+```text
+/yolomg-motion/
+```
+
+This page is copied from `apps/web/public/yolomg-motion/` during the Vite build and reads Google Drive preview links from `videos_external.json`. The linked Drive files/folders must be shared with the intended viewers.
+
 ## Create Annotation Tasks
 
 Task creation is protected by `API_TOKEN` when it is set.

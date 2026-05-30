@@ -140,6 +140,24 @@
       font-weight: 600;
     }
 
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--text);
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .nav-link:hover {
+      border-color: var(--accent);
+    }
+
     button.primary {
       border-color: #1fab50;
       background: #15883f;
@@ -249,6 +267,7 @@
   <div class="app">
     <header>
       <h1>Frame Annotator</h1>
+      <a class="nav-link" href="/yolomg-motion/">YOLOMG Gallery</a>
       <div class="field">
         <label for="videoFile">video</label>
         <input id="videoFile" type="file" accept="video/*" />
