@@ -29,10 +29,71 @@
       font: 14px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
+    .directory {
+      min-height: 100vh;
+      display: grid;
+      align-content: center;
+      gap: 24px;
+      padding: 48px;
+      max-width: 980px;
+      margin: 0 auto;
+    }
+
+    .directory h1 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.1;
+    }
+
+    .directory p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .directory-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(260px, 1fr));
+      gap: 14px;
+    }
+
+    .directory-card {
+      display: grid;
+      gap: 8px;
+      min-height: 150px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .directory-card:hover {
+      border-color: var(--accent);
+      background: var(--panel-2);
+    }
+
+    .directory-card b {
+      font-size: 20px;
+    }
+
+    .directory-card span {
+      color: var(--muted);
+    }
+
     .app {
       min-height: 100vh;
       display: grid;
       grid-template-rows: auto 1fr;
+    }
+
+    body:not(.show-annotator) .app {
+      display: none;
+    }
+
+    body.show-annotator .directory {
+      display: none;
     }
 
     header {
@@ -252,6 +313,14 @@
     }
 
     @media (max-width: 920px) {
+      .directory {
+        padding: 28px 16px;
+      }
+
+      .directory-grid {
+        grid-template-columns: 1fr;
+      }
+
       main {
         grid-template-columns: 1fr;
       }
@@ -264,9 +333,27 @@
   </style>
 </head>
 <body>
+  <section class="directory" aria-label="URAP2026 directory">
+    <div>
+      <h1>URAP2026</h1>
+      <p>Select a workspace to open.</p>
+    </div>
+    <div class="directory-grid">
+      <a class="directory-card" href="/?view=annotator">
+        <b>Frame Annotator</b>
+        <span>Open the video frame annotation tool connected to the Railway API.</span>
+      </a>
+      <a class="directory-card" href="/yolomg-motion/">
+        <b>YOLOMG Motion Gallery</b>
+        <span>Browse RGB, input motion, Grad-CAM, and full overlay demo videos.</span>
+      </a>
+    </div>
+  </section>
+
   <div class="app">
     <header>
       <h1>Frame Annotator</h1>
+      <a class="nav-link" href="/">Directory</a>
       <a class="nav-link" href="/yolomg-motion/">YOLOMG Gallery</a>
       <div class="field">
         <label for="videoFile">video</label>
@@ -371,6 +458,11 @@
   <video id="video" preload="auto" muted playsinline></video>
 
   <script>
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "annotator" || window.location.hash === "#annotator") {
+      document.body.classList.add("show-annotator");
+    }
+
     const els = {
       videoFile: document.getElementById("videoFile"),
       jsonFile: document.getElementById("jsonFile"),
