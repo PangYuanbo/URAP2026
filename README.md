@@ -61,6 +61,7 @@ The current QSTR experiment line combines:
 Useful entry points:
 
 - `python -m qstr_dronedet.cli --help`
+- annotation web/API deployment: `doc/annotation_monorepo_deployment.md`
 - `tools/run_qstr_stable_profile.ps1`
 - `tools/run_qstr_hard_recovery_profile.ps1`
 - `tools/run_qstr_frozen10_profile_benchmark.ps1`

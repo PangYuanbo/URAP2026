@@ -1,0 +1,16 @@
+{
+  "name": "@urap2026/annotation-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@vitejs/plugin-basic-ssl": "^1.1.0",
+    "vite": "^5.4.2"
+  },
+  "devDependencies": {}
+}

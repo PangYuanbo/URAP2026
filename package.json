@@ -1,0 +1,14 @@
+{
+  "name": "urap2026-annotation-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "start:api": "npm run start -w apps/api"
+  }
+}

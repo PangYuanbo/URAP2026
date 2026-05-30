@@ -11,6 +11,10 @@ __pycache__/
 venv/
 env/
 site-packages/
+node_modules/
+package-lock.json
+apps/*/dist/
+apps/api/annotation-data/
 
 # Large/generated research artifacts
 artifacts/

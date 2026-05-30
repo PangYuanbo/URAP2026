@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frame Annotation Tool</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111314;
+      --panel: #1a1d1f;
+      --panel-2: #222629;
+      --text: #f2f4f5;
+      --muted: #9aa3a8;
+      --line: #343a40;
+      --accent: #27d35f;
+      --warn: #f6bd3d;
+      --danger: #ff5c70;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    header h1 {
+      margin: 0 10px 0 0;
+      font-size: 16px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(520px, 1fr) 340px;
+      min-height: 0;
+    }
+
+    .stage {
+      min-width: 0;
+      padding: 14px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 10px;
+    }
+
+    .canvas-wrap {
+      min-height: 360px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: auto;
+      background: #050606;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    canvas {
+      max-width: 100%;
+      height: auto;
+      cursor: crosshair;
+      display: block;
+      background: #050606;
+    }
+
+    aside {
+      border-left: 1px solid var(--line);
+      background: var(--panel);
+      padding: 14px;
+      overflow: auto;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .field {
+      display: grid;
+      gap: 4px;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    input,
+    select,
+    button {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--text);
+      min-height: 34px;
+      padding: 6px 9px;
+      font: inherit;
+    }
+
+    input[type="number"] {
+      width: 92px;
+    }
+
+    input.short {
+      width: 112px;
+    }
+
+    input[type="file"] {
+      max-width: 230px;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button.primary {
+      border-color: #1fab50;
+      background: #15883f;
+    }
+
+    button.warn {
+      border-color: #a67616;
+      background: #654709;
+    }
+
+    button.danger {
+      border-color: #983143;
+      background: #67202d;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .status {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      color: var(--muted);
+      min-height: 38px;
+    }
+
+    .meter {
+      height: 8px;
+      background: #050606;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .meter > div {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .stat {
+      padding: 10px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 8px;
+    }
+
+    .stat b {
+      display: block;
+      font-size: 20px;
+      margin-top: 2px;
+    }
+
+    .anno-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .anno {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      border-radius: 8px;
+      padding: 8px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .anno small {
+      color: var(--muted);
+    }
+
+    .kbd {
+      color: var(--muted);
+      margin-top: 12px;
+      display: grid;
+      gap: 4px;
+    }
+
+    video {
+      display: none;
+    }
+
+    @media (max-width: 920px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+
+      aside {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Frame Annotator</h1>
+      <div class="field">
+        <label for="videoFile">video</label>
+        <input id="videoFile" type="file" accept="video/*" />
+      </div>
+      <div class="field">
+        <label for="jsonFile">import json</label>
+        <input id="jsonFile" type="file" accept="application/json,.json" />
+      </div>
+      <div class="field">
+        <label for="fpsInput">fps</label>
+        <input id="fpsInput" type="number" min="1" step="0.001" value="29.97" />
+      </div>
+      <div class="field">
+        <label for="stepInput">step</label>
+        <input id="stepInput" type="number" min="1" step="1" value="5" />
+      </div>
+      <div class="field">
+        <label for="startInput">start frame</label>
+        <input id="startInput" class="short" type="number" min="0" step="1" value="0" />
+      </div>
+      <div class="field">
+        <label for="endInput">end frame</label>
+        <input id="endInput" class="short" type="number" min="0" step="1" placeholder="auto" />
+      </div>
+      <div class="field">
+        <label for="workerInput">annotator</label>
+        <input id="workerInput" class="short" type="text" placeholder="name" />
+      </div>
+      <button id="exportBtn" class="primary" disabled>Export JSON</button>
+      <button id="clearBtn" class="danger" disabled>Clear</button>
+    </header>
+
+    <main>
+      <section class="stage">
+        <div class="row">
+          <button id="prevBtn" disabled>Prev</button>
+          <button id="todoBtn" disabled>Next Todo</button>
+          <button id="skipBtn" class="warn" disabled>Skip</button>
+          <button id="nextBtn" disabled>Next</button>
+          <button id="undoBtn" disabled>Undo Box</button>
+          <div class="field">
+            <label for="classInput">class</label>
+            <select id="classInput">
+              <option value="drone">drone</option>
+              <option value="ground_object">ground_object</option>
+            </select>
+          </div>
+          <label class="row">
+            <input id="autoAdvanceInput" type="checkbox" checked />
+            auto next after box
+          </label>
+          <label class="row">
+            <input id="oneBoxInput" type="checkbox" checked />
+            one box per frame
+          </label>
+        </div>
+
+        <div class="canvas-wrap">
+          <canvas id="canvas" width="1280" height="720"></canvas>
+        </div>
+
+        <div>
+          <div class="status" id="status">Load a video to start.</div>
+          <div class="meter" aria-label="progress"><div id="progressBar"></div></div>
+        </div>
+      </section>
+
+      <aside>
+        <div class="stats">
+          <div class="stat">Frame <b id="frameStat">-</b></div>
+          <div class="stat">Labeled <b id="labeledStat">0</b></div>
+          <div class="stat">Boxes <b id="boxesStat">0</b></div>
+          <div class="stat">Remaining <b id="remainingStat">-</b></div>
+        </div>
+        <div class="row">
+          <button id="saveDraftBtn" disabled>Save Draft</button>
+          <button id="loadDraftBtn" disabled>Load Draft</button>
+        </div>
+        <div class="kbd">
+          <div><b>Drag</b>: draw box</div>
+          <div><b>N</b>: next frame</div>
+          <div><b>B</b>: previous frame</div>
+          <div><b>S</b>: skip frame</div>
+          <div><b>U</b>: undo last box</div>
+          <div><b>E</b>: export JSON</div>
+        </div>
+        <div class="anno-list" id="annoList"></div>
+      </aside>
+    </main>
+  </div>
+
+  <video id="video" preload="auto" muted playsinline></video>
+
+  <script>
+    const els = {
+      videoFile: document.getElementById("videoFile"),
+      jsonFile: document.getElementById("jsonFile"),
+      fpsInput: document.getElementById("fpsInput"),
+      stepInput: document.getElementById("stepInput"),
+      startInput: document.getElementById("startInput"),
+      endInput: document.getElementById("endInput"),
+      workerInput: document.getElementById("workerInput"),
+      exportBtn: document.getElementById("exportBtn"),
+      clearBtn: document.getElementById("clearBtn"),
+      prevBtn: document.getElementById("prevBtn"),
+      todoBtn: document.getElementById("todoBtn"),
+      skipBtn: document.getElementById("skipBtn"),
+      nextBtn: document.getElementById("nextBtn"),
+      undoBtn: document.getElementById("undoBtn"),
+      classInput: document.getElementById("classInput"),
+      autoAdvanceInput: document.getElementById("autoAdvanceInput"),
+      oneBoxInput: document.getElementById("oneBoxInput"),
+      saveDraftBtn: document.getElementById("saveDraftBtn"),
+      loadDraftBtn: document.getElementById("loadDraftBtn"),
+      status: document.getElementById("status"),
+      progressBar: document.getElementById("progressBar"),
+      frameStat: document.getElementById("frameStat"),
+      labeledStat: document.getElementById("labeledStat"),
+      boxesStat: document.getElementById("boxesStat"),
+      remainingStat: document.getElementById("remainingStat"),
+      annoList: document.getElementById("annoList"),
+      canvas: document.getElementById("canvas"),
+      video: document.getElementById("video"),
+    };
+
+    const ctx = els.canvas.getContext("2d");
+
+    const state = {
+      videoName: "",
+      videoUrl: "",
+      videoWidth: 0,
+      videoHeight: 0,
+      totalFrames: 0,
+      targetFrames: [],
+      targetIndex: 0,
+      annotations: [],
+      skippedFrames: new Set(),
+      currentBoxes: [],
+      drawing: null,
+      draftKey: "",
+    };
+
+    function fps() {
+      return Number(els.fpsInput.value) || 29.97;
+    }
+
+    function step() {
+      return Math.max(1, Math.round(Number(els.stepInput.value) || 5));
+    }
+
+    function startFrame() {
+      return Math.max(0, Math.round(Number(els.startInput.value) || 0));
+    }
+
+    function endFrame() {
+      const requested = Number(els.endInput.value);
+      if (!Number.isFinite(requested) || requested <= 0) return Math.max(0, state.totalFrames - 1);
+      return Math.min(Math.max(0, Math.round(requested)), Math.max(0, state.totalFrames - 1));
+    }
+
+    function currentFrame() {
+      return state.targetFrames[state.targetIndex] ?? 0;
+    }
+
+    function annotationFor(frameId) {
+      return state.annotations.find((item) => item.frame_id === frameId);
+    }
+
+    function setEnabled(enabled) {
+      for (const key of ["exportBtn", "clearBtn", "prevBtn", "todoBtn", "skipBtn", "nextBtn", "undoBtn", "saveDraftBtn", "loadDraftBtn"]) {
+        els[key].disabled = !enabled;
+      }
+    }
+
+    function buildTargetFrames() {
+      const gap = step();
+      state.targetFrames = [];
+      const start = startFrame();
+      const end = endFrame();
+      for (let frame = start; frame <= end; frame += gap) {
+        state.targetFrames.push(frame);
+      }
+      if (!state.targetFrames.length) state.targetFrames.push(start);
+      if (state.targetFrames[state.targetFrames.length - 1] !== end) {
+        state.targetFrames.push(end);
+      }
+    }
+
+    function updateStats() {
+      const frameId = currentFrame();
+      const labeledFrames = new Set(state.annotations.map((item) => item.frame_id));
+      const boxCount = state.annotations.reduce((sum, item) => sum + item.boxes.length, 0);
+      const done = labeledFrames.size + state.skippedFrames.size;
+      const remaining = Math.max(0, state.targetFrames.length - done);
+      els.frameStat.textContent = state.targetFrames.length ? `${frameId}` : "-";
+      els.labeledStat.textContent = `${labeledFrames.size}`;
+      els.boxesStat.textContent = `${boxCount}`;
+      els.remainingStat.textContent = `${remaining}`;
+      els.progressBar.style.width = state.targetFrames.length ? `${Math.min(100, (done / state.targetFrames.length) * 100)}%` : "0%";
+
+      const seconds = frameId / fps();
+      els.status.textContent = state.videoName
+        ? `${state.videoName} | target ${state.targetIndex + 1}/${state.targetFrames.length} | frame ${frameId} | ${seconds.toFixed(3)}s`
+        : "Load a video to start.";
+    }
+
+    function redraw(extraBox = null) {
+      ctx.clearRect(0, 0, els.canvas.width, els.canvas.height);
+      if (!state.videoName) {
+        ctx.fillStyle = "#050606";
+        ctx.fillRect(0, 0, els.canvas.width, els.canvas.height);
+        ctx.fillStyle = "#9aa3a8";
+        ctx.font = "24px system-ui";
+        ctx.fillText("Load a video to start", 32, 56);
+        return;
+      }
+      ctx.drawImage(els.video, 0, 0, els.canvas.width, els.canvas.height);
+      const frameId = currentFrame();
+      const saved = annotationFor(frameId);
+      const boxes = saved ? saved.boxes : state.currentBoxes;
+      for (const box of boxes) {
+        drawBox(box, false);
+      }
+      if (extraBox) drawBox(extraBox, true);
+    }
+
+    function drawBox(box, preview) {
+      const sx = els.canvas.width / state.videoWidth;
+      const sy = els.canvas.height / state.videoHeight;
+      const x = box.x1 * sx;
+      const y = box.y1 * sy;
+      const w = (box.x2 - box.x1) * sx;
+      const h = (box.y2 - box.y1) * sy;
+      const color = box.class === "ground_object" ? "#f6bd3d" : "#27d35f";
+      ctx.strokeStyle = color;
+      ctx.lineWidth = preview ? 2 : 3;
+      ctx.strokeRect(x, y, w, h);
+      ctx.fillStyle = color;
+      ctx.font = "16px system-ui";
+      const label = box.class;
+      const textWidth = ctx.measureText(label).width + 10;
+      ctx.fillRect(x, Math.max(0, y - 24), textWidth, 22);
+      ctx.fillStyle = "#0b0d0e";
+      ctx.fillText(label, x + 5, Math.max(16, y - 7));
+    }
+
+    function renderList() {
+      els.annoList.innerHTML = "";
+      const recent = [...state.annotations].sort((a, b) => b.frame_id - a.frame_id).slice(0, 12);
+      for (const item of recent) {
+        const div = document.createElement("div");
+        div.className = "anno";
+        div.innerHTML = `<b>frame ${item.frame_id}</b><small>${item.boxes.length} box(es), ${item.time_sec.toFixed(3)}s</small>`;
+        els.annoList.appendChild(div);
+      }
+    }
+
+    function canvasPoint(event) {
+      const rect = els.canvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * (els.canvas.width / rect.width);
+      const y = (event.clientY - rect.top) * (els.canvas.height / rect.height);
+      return { x, y };
+    }
+
+    function canvasToSource(box) {
+      const sx = state.videoWidth / els.canvas.width;
+      const sy = state.videoHeight / els.canvas.height;
+      const x1 = Math.max(0, Math.min(box.x1, box.x2)) * sx;
+      const y1 = Math.max(0, Math.min(box.y1, box.y2)) * sy;
+      const x2 = Math.min(els.canvas.width, Math.max(box.x1, box.x2)) * sx;
+      const y2 = Math.min(els.canvas.height, Math.max(box.y1, box.y2)) * sy;
+      return {
+        class: els.classInput.value,
+        x1: Number(x1.toFixed(3)),
+        y1: Number(y1.toFixed(3)),
+        x2: Number(x2.toFixed(3)),
+        y2: Number(y2.toFixed(3)),
+      };
+    }
+
+    async function seekToFrame(frameId) {
+      return new Promise((resolve) => {
+        const onSeeked = () => {
+          els.video.removeEventListener("seeked", onSeeked);
+          state.currentBoxes = annotationFor(frameId)?.boxes.map((box) => ({ ...box })) ?? [];
+          redraw();
+          updateStats();
+          renderList();
+          resolve();
+        };
+        els.video.addEventListener("seeked", onSeeked);
+        els.video.currentTime = Math.min(els.video.duration || 0, frameId / fps());
+      });
+    }
+
+    function upsertCurrentAnnotation() {
+      const frameId = currentFrame();
+      const existing = annotationFor(frameId);
+      const payload = {
+        video_name: state.videoName,
+        frame_id: frameId,
+        time_sec: frameId / fps(),
+        width: state.videoWidth,
+        height: state.videoHeight,
+        boxes: state.currentBoxes.map((box) => ({ ...box })),
+      };
+      if (existing) Object.assign(existing, payload);
+      else state.annotations.push(payload);
+      state.skippedFrames.delete(frameId);
+    }
+
+    async function goToIndex(index) {
+      state.targetIndex = Math.max(0, Math.min(index, state.targetFrames.length - 1));
+      await seekToFrame(currentFrame());
+    }
+
+    async function goNext() {
+      await goToIndex(state.targetIndex + 1);
+    }
+
+    async function goPrev() {
+      await goToIndex(state.targetIndex - 1);
+    }
+
+    async function goNextTodo() {
+      for (let i = state.targetIndex; i < state.targetFrames.length; i += 1) {
+        const frame = state.targetFrames[i];
+        if (!annotationFor(frame) && !state.skippedFrames.has(frame)) {
+          await goToIndex(i);
+          return;
+        }
+      }
+      for (let i = 0; i < state.targetIndex; i += 1) {
+        const frame = state.targetFrames[i];
+        if (!annotationFor(frame) && !state.skippedFrames.has(frame)) {
+          await goToIndex(i);
+          return;
+        }
+      }
+      els.status.textContent = "No remaining unlabeled target frames in this assignment.";
+    }
+
+    function exportJson() {
+      const payload = {
+        version: 1,
+        video_name: state.videoName,
+        fps: fps(),
+        frame_step: step(),
+        assignment: {
+          annotator: els.workerInput.value.trim(),
+          start_frame: startFrame(),
+          end_frame: endFrame(),
+        },
+        total_frames: state.totalFrames,
+        width: state.videoWidth,
+        height: state.videoHeight,
+        skipped_frames: [...state.skippedFrames].sort((a, b) => a - b),
+        annotations: [...state.annotations].sort((a, b) => a.frame_id - b.frame_id),
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const stem = state.videoName.replace(/\.[^.]+$/, "");
+      a.href = url;
+      a.download = `${stem}_step${step()}_annotations.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function saveDraft() {
+      if (!state.draftKey) return;
+      const payload = {
+        videoName: state.videoName,
+        fps: fps(),
+        step: step(),
+        startFrame: startFrame(),
+        endFrame: endFrame(),
+        annotator: els.workerInput.value.trim(),
+        totalFrames: state.totalFrames,
+        annotations: state.annotations,
+        skippedFrames: [...state.skippedFrames],
+        targetIndex: state.targetIndex,
+      };
+      localStorage.setItem(state.draftKey, JSON.stringify(payload));
+      els.status.textContent = `Draft saved for ${state.videoName}.`;
+    }
+
+    async function loadDraft() {
+      const raw = localStorage.getItem(state.draftKey);
+      if (!raw) {
+        els.status.textContent = "No draft found for this video.";
+        return;
+      }
+      const payload = JSON.parse(raw);
+      state.annotations = payload.annotations ?? [];
+      state.skippedFrames = new Set(payload.skippedFrames ?? []);
+      state.targetIndex = payload.targetIndex ?? 0;
+      if (payload.startFrame !== undefined) els.startInput.value = payload.startFrame;
+      if (payload.endFrame !== undefined) els.endInput.value = payload.endFrame;
+      if (payload.annotator !== undefined) els.workerInput.value = payload.annotator;
+      buildTargetFrames();
+      await seekToFrame(currentFrame());
+    }
+
+    async function importJson(file) {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      state.annotations = payload.annotations ?? [];
+      state.skippedFrames = new Set(payload.skipped_frames ?? payload.skippedFrames ?? []);
+      if (payload.fps) els.fpsInput.value = payload.fps;
+      if (payload.frame_step) els.stepInput.value = payload.frame_step;
+      if (payload.assignment) {
+        if (payload.assignment.start_frame !== undefined) els.startInput.value = payload.assignment.start_frame;
+        if (payload.assignment.end_frame !== undefined) els.endInput.value = payload.assignment.end_frame;
+        if (payload.assignment.annotator !== undefined) els.workerInput.value = payload.assignment.annotator;
+      }
+      buildTargetFrames();
+      await goToIndex(0);
+      await goNextTodo();
+    }
+
+    els.videoFile.addEventListener("change", async () => {
+      const file = els.videoFile.files[0];
+      if (!file) return;
+      if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
+      state.videoName = file.name;
+      state.videoUrl = URL.createObjectURL(file);
+      state.annotations = [];
+      state.skippedFrames = new Set();
+      state.targetIndex = 0;
+      state.draftKey = `frame-annotator:${state.videoName}`;
+      els.video.src = state.videoUrl;
+      await new Promise((resolve) => els.video.addEventListener("loadedmetadata", resolve, { once: true }));
+      state.videoWidth = els.video.videoWidth;
+      state.videoHeight = els.video.videoHeight;
+      state.totalFrames = Math.max(1, Math.floor(els.video.duration * fps()));
+      els.canvas.width = 1280;
+      els.canvas.height = Math.round(1280 * state.videoHeight / state.videoWidth);
+      buildTargetFrames();
+      setEnabled(true);
+      await seekToFrame(0);
+    });
+
+    els.jsonFile.addEventListener("change", () => {
+      const file = els.jsonFile.files[0];
+      if (file && state.videoName) importJson(file);
+    });
+
+    els.stepInput.addEventListener("change", async () => {
+      if (!state.videoName) return;
+      buildTargetFrames();
+      await goToIndex(0);
+    });
+
+    for (const input of [els.startInput, els.endInput]) {
+      input.addEventListener("change", async () => {
+        if (!state.videoName) return;
+        buildTargetFrames();
+        await goToIndex(0);
+      });
+    }
+
+    els.fpsInput.addEventListener("change", async () => {
+      if (!state.videoName) return;
+      state.totalFrames = Math.max(1, Math.floor(els.video.duration * fps()));
+      buildTargetFrames();
+      await goToIndex(0);
+    });
+
+    els.canvas.addEventListener("mousedown", (event) => {
+      if (!state.videoName) return;
+      const start = canvasPoint(event);
+      state.drawing = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
+    });
+
+    els.canvas.addEventListener("mousemove", (event) => {
+      if (!state.drawing) return;
+      const point = canvasPoint(event);
+      state.drawing.x2 = point.x;
+      state.drawing.y2 = point.y;
+      const sourceBox = canvasToSource(state.drawing);
+      redraw(sourceBox);
+    });
+
+    els.canvas.addEventListener("mouseup", async () => {
+      if (!state.drawing) return;
+      const sourceBox = canvasToSource(state.drawing);
+      state.drawing = null;
+      if (Math.abs(sourceBox.x2 - sourceBox.x1) < 4 || Math.abs(sourceBox.y2 - sourceBox.y1) < 4) {
+        redraw();
+        return;
+      }
+      if (els.oneBoxInput.checked) state.currentBoxes = [];
+      state.currentBoxes.push(sourceBox);
+      upsertCurrentAnnotation();
+      saveDraft();
+      redraw();
+      updateStats();
+      renderList();
+      if (els.autoAdvanceInput.checked) await goNext();
+    });
+
+    els.nextBtn.addEventListener("click", goNext);
+    els.prevBtn.addEventListener("click", goPrev);
+    els.todoBtn.addEventListener("click", goNextTodo);
+    els.skipBtn.addEventListener("click", async () => {
+      state.skippedFrames.add(currentFrame());
+      saveDraft();
+      await goNext();
+    });
+    els.undoBtn.addEventListener("click", () => {
+      const frameId = currentFrame();
+      const existing = annotationFor(frameId);
+      if (existing) {
+        existing.boxes.pop();
+        if (!existing.boxes.length) state.annotations = state.annotations.filter((item) => item.frame_id !== frameId);
+      }
+      state.currentBoxes = annotationFor(frameId)?.boxes.map((box) => ({ ...box })) ?? [];
+      saveDraft();
+      redraw();
+      updateStats();
+      renderList();
+    });
+    els.exportBtn.addEventListener("click", exportJson);
+    els.saveDraftBtn.addEventListener("click", saveDraft);
+    els.loadDraftBtn.addEventListener("click", loadDraft);
+    els.clearBtn.addEventListener("click", async () => {
+      if (!confirm("Clear all annotations for the loaded video?")) return;
+      state.annotations = [];
+      state.skippedFrames = new Set();
+      saveDraft();
+      await seekToFrame(currentFrame());
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+      const key = event.key.toLowerCase();
+      if (key === "n") goNext();
+      if (key === "b") goPrev();
+      if (key === "s") els.skipBtn.click();
+      if (key === "u") els.undoBtn.click();
+      if (key === "e" && state.videoName) exportJson();
+    });
+
+    redraw();
+  </script>
+</body>
+</html>
