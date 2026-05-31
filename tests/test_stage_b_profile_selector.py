@@ -1,6 +1,6 @@
 from argparse import Namespace
 
-from tools.select_stage_b_profile_outputs import select_rows
+from tools.select_stage_b_profile_outputs import _score_scene_gate_features, select_rows
 
 
 def _row(source="yolo_tile", predicted_class="background", score=0.1, drone=0.2, background=0.7, bbox=None, mode="normal"):
@@ -169,3 +169,24 @@ def test_stage_b_selector_gate_can_override_background_for_persistent_hard_tiny(
     assert selected[0]["predicted_class"] == "drone"
     assert selected[0]["stage_b_profile_selection_reason"] == "recall_scene_hard_tiny_recovery"
     assert counts["recall_scene_hard_tiny_recovery"] == 1
+
+
+def test_stage_b_selector_scores_mlp_scene_tracklet_gate():
+    gate = {
+        "kind": "qstr_scene_recovery_tracklet_mlp_v1",
+        "model_type": "mlp",
+        "feature_names": ["detector_persistence", "mean_background"],
+        "mean": [0.0, 0.0],
+        "std": [1.0, 1.0],
+        "hidden_weights": [[2.0, -1.0]],
+        "hidden_bias": [0.0],
+        "output_weights": [4.0],
+        "output_bias": -1.0,
+        "threshold": 0.5,
+    }
+
+    high = _score_scene_gate_features({"detector_persistence": 1.0, "mean_background": 0.1}, gate)
+    low = _score_scene_gate_features({"detector_persistence": 0.1, "mean_background": 1.0}, gate)
+
+    assert high > 0.9
+    assert low < 0.5

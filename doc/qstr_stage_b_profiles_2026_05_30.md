@@ -531,3 +531,52 @@ V6 p90 was the best V6 variant on calibration, so it was evaluated once on `1218
 Decision:
 
 V6 fixed the train/calibration leakage issue, but it did not improve the system. On calibration, every V6 gate preserved recall but added more FP than v3. On held-out, v6 p90 matched v3 recall but increased FP. Keep v3 as the best current recovery-profile experiment, and do not continue tuning `121806`. The next useful step is to build more positive scene-recovery tracklets from additional non-held-out DJI footage, or change the gate objective/model so persistent true DJI targets are not confused with persistent detector-supported false positives.
+
+## V7 Recall-Guard Objective / MLP Trial
+
+V7 tests whether the blocker can be solved by model/objective changes rather than more held-out tuning.
+
+Code changes:
+
+- `qstr_dronedet/tracking/sequence_gate.py` now adds explicit detector-plus-background continuity features:
+  - `longest_detector_high_background_streak`;
+  - `detector_high_background_persistence`;
+  - `longest_detector_high_background_drone_streak`;
+  - `detector_high_background_drone_persistence`;
+  - `mean_detector_objectness`;
+  - `mean_detector_background`;
+  - `mean_detector_drone`.
+- `tools/train_stage_b_recovery_tracklet_gate.py` supports:
+  - `--model-type logistic|mlp`;
+  - `--objective balanced|recall_preserving`;
+  - weighted recall-preserving positive samples for high-background, detector-persistent true tracklets.
+- `tools/select_stage_b_profile_outputs.py` can score both old logistic JSON gates and new MLP JSON gates.
+
+Training used the same clean V6 train-only root:
+
+`D:\datasets\my_video\full_infer_compare\dji_stageb_paired_scene_gate_train_roots_dense_train_only_20260531`
+
+V7 training summary:
+
+| gate | model | objective | train precision | train recall |
+| --- | --- | --- | ---: | ---: |
+| v7 mlp p50 | MLP | recall_preserving | 0.5000 | 0.5372 |
+| v7 mlp p70 | MLP | recall_preserving | 0.7200 | 0.2975 |
+| v7 mlp p90 | MLP | recall_preserving | 0.9310 | 0.2231 |
+| v7 logistic p70 | logistic | balanced | 0.7317 | 0.2479 |
+| v7 logistic p90 | logistic | balanced | 0.9200 | 0.1901 |
+
+Calibration-only result on the old 5 DJI segments:
+
+| gate | calibration recall | calibration FP | final/frame | approx precision |
+| --- | ---: | ---: | ---: | ---: |
+| v3 feature gate | 0.4634 | 2140 | 0.8564 | 0.0088 |
+| v7 mlp p50 | 0.4634 | 2455 | 0.9814 | 0.0077 |
+| v7 mlp p70 | 0.4634 | 2377 | 0.9504 | 0.0079 |
+| v7 mlp p90 | 0.4634 | 2332 | 0.9326 | 0.0081 |
+| v7 logistic p70 | 0.4634 | 2262 | 0.9048 | 0.0083 |
+| v7 logistic p90 | 0.4634 | 2217 | 0.8869 | 0.0085 |
+
+Decision:
+
+No V7 variant beats the v3 calibration baseline, so V7 was not evaluated on `121806`. This is intentional: held-out should only be touched after a non-held-out calibration improvement. The model/objective change alone is not enough with the current data. The next step is data-side: add more non-held-out DJI positive scene-recovery tracklets, ideally from clips where strict FP-control suppresses true persistent drone tracks but recall-oriented output keeps them.

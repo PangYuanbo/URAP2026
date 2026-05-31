@@ -57,4 +57,9 @@ def test_sequence_tracklet_features_include_persistence_and_contradiction_terms(
     assert features["longest_objectness_streak"] == 3
     assert features["high_background_rate"] == 1.0
     assert features["detector_high_background_drone_rate"] == 1.0
+    assert features["longest_detector_high_background_streak"] == 3
+    assert features["detector_high_background_persistence"] == 1.0
+    assert features["longest_detector_high_background_drone_streak"] == 3
+    assert features["detector_high_background_drone_persistence"] == 1.0
+    assert abs(features["mean_detector_objectness"] - 0.8) < 1e-6
     assert features["mean_center_step_per_side"] < 0.2

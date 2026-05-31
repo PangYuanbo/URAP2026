@@ -134,7 +134,15 @@ def _load_scene_tracklet_gate(path: str | None) -> dict[str, Any] | None:
         return None
     with Path(path).open("r", encoding="utf-8") as f:
         gate = json.load(f)
-    for key in ("feature_names", "mean", "std", "weights", "bias", "threshold"):
+    base_keys = ("feature_names", "mean", "std", "threshold")
+    for key in base_keys:
+        if key not in gate:
+            raise ValueError(f"Scene tracklet gate is missing key: {key}")
+    if gate.get("model_type", "logistic") == "mlp" or gate.get("kind") == "qstr_scene_recovery_tracklet_mlp_v1":
+        required = ("hidden_weights", "hidden_bias", "output_weights", "output_bias")
+    else:
+        required = ("weights", "bias")
+    for key in required:
         if key not in gate:
             raise ValueError(f"Scene tracklet gate is missing key: {key}")
     return gate
@@ -152,11 +160,21 @@ def _score_scene_gate_features(features: dict[str, Any], gate: dict[str, Any]) -
     names = list(gate["feature_names"])
     mean = [float(v) for v in gate["mean"]]
     std = [max(float(v), 1e-6) for v in gate["std"]]
-    weights = [float(v) for v in gate["weights"]]
-    value = float(gate["bias"])
+    x_values: list[float] = []
     for idx, name in enumerate(names):
-        x = (float(features.get(name, 0.0)) - mean[idx]) / std[idx]
-        value += weights[idx] * x
+        x_values.append((float(features.get(name, 0.0)) - mean[idx]) / std[idx])
+    if gate.get("model_type", "logistic") == "mlp" or gate.get("kind") == "qstr_scene_recovery_tracklet_mlp_v1":
+        hidden_weights = [[float(v) for v in row] for row in gate["hidden_weights"]]
+        hidden_bias = [float(v) for v in gate["hidden_bias"]]
+        output_weights = [float(v) for v in gate["output_weights"]]
+        hidden: list[float] = []
+        for row, bias in zip(hidden_weights, hidden_bias):
+            z = bias + sum(w * x for w, x in zip(row, x_values))
+            hidden.append(max(0.0, z))
+        value = float(gate["output_bias"]) + sum(w * h for w, h in zip(output_weights, hidden))
+    else:
+        weights = [float(v) for v in gate["weights"]]
+        value = float(gate["bias"]) + sum(w * x for w, x in zip(weights, x_values))
     return _sigmoid(value)
 
 

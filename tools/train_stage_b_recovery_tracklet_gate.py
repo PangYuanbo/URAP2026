@@ -55,6 +55,13 @@ FEATURE_NAMES = [
     "high_background_rate",
     "detector_high_background_rate",
     "detector_high_background_drone_rate",
+    "longest_detector_high_background_streak",
+    "detector_high_background_persistence",
+    "longest_detector_high_background_drone_streak",
+    "detector_high_background_drone_persistence",
+    "mean_detector_objectness",
+    "mean_detector_background",
+    "mean_detector_drone",
     "background_detector_contradiction",
     "drone_detector_contradiction",
     "max_track_history_len",
@@ -251,28 +258,95 @@ def _load_scene_tracklet_samples(args: argparse.Namespace) -> tuple[list[dict[st
     return all_samples, all_csv_rows
 
 
-def _train_logistic(x: np.ndarray, y: np.ndarray, epochs: int, lr: float, seed: int) -> tuple[np.ndarray, float, list[dict[str, float]]]:
-    torch.manual_seed(seed)
+def _sample_weights(samples: list[dict[str, Any]], args: argparse.Namespace) -> np.ndarray:
+    weights: list[float] = []
+    for sample in samples:
+        label = int(sample["label"])
+        features = sample["feature_dict"]
+        weight = 1.0
+        if args.objective == "recall_preserving":
+            persistence = float(features.get("detector_persistence", 0.0))
+            high_bg = max(
+                float(features.get("high_background_rate", 0.0)),
+                float(features.get("detector_high_background_rate", 0.0)),
+            )
+            high_bg_drone = float(features.get("detector_high_background_drone_rate", 0.0))
+            mean_drone = float(features.get("mean_drone", 0.0))
+            if label == 1:
+                weight *= args.positive_sample_weight
+                weight *= 1.0 + args.hard_positive_weight * high_bg
+                weight *= 1.0 + args.persistent_positive_weight * persistence
+                weight *= 1.0 + args.contradiction_positive_weight * high_bg_drone
+            else:
+                weight *= 1.0 + args.hard_negative_weight * persistence * max(high_bg, mean_drone)
+        weights.append(weight)
+    arr = np.asarray(weights, dtype=np.float32)
+    mean = float(arr.mean()) if len(arr) else 1.0
+    if mean > 1e-6:
+        arr = arr / mean
+    return arr
+
+
+def _train_gate_model(
+    x: np.ndarray,
+    y: np.ndarray,
+    sample_weights: np.ndarray,
+    args: argparse.Namespace,
+) -> tuple[dict[str, Any], np.ndarray, list[dict[str, float]]]:
+    torch.manual_seed(args.seed)
     x_t = torch.tensor(x, dtype=torch.float32)
     y_t = torch.tensor(y, dtype=torch.float32).view(-1, 1)
-    model = torch.nn.Linear(x.shape[1], 1)
+    w_t = torch.tensor(sample_weights, dtype=torch.float32).view(-1, 1)
+    if args.model_type == "logistic":
+        model: torch.nn.Module = torch.nn.Linear(x.shape[1], 1)
+    elif args.model_type == "mlp":
+        model = torch.nn.Sequential(
+            torch.nn.Linear(x.shape[1], args.hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(args.hidden_dim, 1),
+        )
+    else:
+        raise ValueError(f"Unknown model type: {args.model_type}")
     pos = float(y.sum())
     neg = float(len(y) - y.sum())
     pos_weight = torch.tensor([max(1.0, neg / max(1.0, pos))], dtype=torch.float32)
-    loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight, reduction="none")
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     history: list[dict[str, float]] = []
-    for epoch in range(epochs):
+    for epoch in range(args.epochs):
         opt.zero_grad(set_to_none=True)
         logits = model(x_t)
-        loss = loss_fn(logits, y_t)
+        loss = (loss_fn(logits, y_t) * w_t).mean()
         loss.backward()
         opt.step()
-        if epoch == 0 or (epoch + 1) % 50 == 0 or epoch + 1 == epochs:
+        if epoch == 0 or (epoch + 1) % 50 == 0 or epoch + 1 == args.epochs:
             history.append({"epoch": float(epoch + 1), "loss": float(loss.item())})
-    weights = model.weight.detach().cpu().numpy().reshape(-1)
-    bias = float(model.bias.detach().cpu().numpy()[0])
-    return weights, bias, history
+    with torch.no_grad():
+        probs = torch.sigmoid(model(x_t)).detach().cpu().numpy().reshape(-1)
+    if args.model_type == "logistic":
+        linear = model
+        assert isinstance(linear, torch.nn.Linear)
+        params = {
+            "model_type": "logistic",
+            "weights": linear.weight.detach().cpu().numpy().reshape(-1).tolist(),
+            "bias": float(linear.bias.detach().cpu().numpy()[0]),
+        }
+    else:
+        seq = model
+        assert isinstance(seq, torch.nn.Sequential)
+        first = seq[0]
+        last = seq[2]
+        assert isinstance(first, torch.nn.Linear)
+        assert isinstance(last, torch.nn.Linear)
+        params = {
+            "model_type": "mlp",
+            "hidden_activation": "relu",
+            "hidden_weights": first.weight.detach().cpu().numpy().tolist(),
+            "hidden_bias": first.bias.detach().cpu().numpy().tolist(),
+            "output_weights": last.weight.detach().cpu().numpy().reshape(-1).tolist(),
+            "output_bias": float(last.bias.detach().cpu().numpy()[0]),
+        }
+    return params, probs, history
 
 
 def _sigmoid(v: np.ndarray) -> np.ndarray:
@@ -340,6 +414,15 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--lr", type=float, default=0.03)
     parser.add_argument("--seed", type=int, default=530)
+    parser.add_argument("--model-type", choices=["logistic", "mlp"], default="logistic")
+    parser.add_argument("--hidden-dim", type=int, default=16)
+    parser.add_argument("--weight-decay", type=float, default=1e-4)
+    parser.add_argument("--objective", choices=["balanced", "recall_preserving"], default="balanced")
+    parser.add_argument("--positive-sample-weight", type=float, default=1.8)
+    parser.add_argument("--hard-positive-weight", type=float, default=2.0)
+    parser.add_argument("--persistent-positive-weight", type=float, default=1.5)
+    parser.add_argument("--contradiction-positive-weight", type=float, default=2.0)
+    parser.add_argument("--hard-negative-weight", type=float, default=1.0)
     parser.add_argument("--min-precision", type=float, default=0.20)
     parser.add_argument("--min-tp", type=int, default=1)
     parser.add_argument("--tp-weight", type=float, default=100.0)
@@ -358,8 +441,8 @@ def main() -> None:
     std = x_raw.std(axis=0)
     std[std < 1e-6] = 1.0
     x = (x_raw - mean) / std
-    weights, bias, history = _train_logistic(x, y, epochs=args.epochs, lr=args.lr, seed=args.seed)
-    probs = _sigmoid(x @ weights + bias)
+    sample_weights = _sample_weights(samples, args)
+    gate_params, probs, history = _train_gate_model(x, y, sample_weights, args)
     threshold, threshold_rows, selected = _select_threshold(
         probs,
         y,
@@ -373,12 +456,11 @@ def main() -> None:
     _write_csv(out / "scene_tracklet_gate_training_samples_scored.csv", csv_rows)
     _write_csv(out / "scene_tracklet_gate_threshold_sweep.csv", threshold_rows)
     gate = {
-        "kind": "qstr_scene_recovery_tracklet_logistic_v2",
+        "kind": "qstr_scene_recovery_tracklet_logistic_v2" if args.model_type == "logistic" else "qstr_scene_recovery_tracklet_mlp_v1",
         "feature_names": FEATURE_NAMES,
         "mean": mean.tolist(),
         "std": std.tolist(),
-        "weights": weights.tolist(),
-        "bias": bias,
+        **gate_params,
         "threshold": threshold,
         "sequence_gate_config": {
             "candidate_min_score": 0.0,
@@ -393,8 +475,14 @@ def main() -> None:
             "num_tracklets": len(samples),
             "positive_tracklets": int(y.sum()),
             "negative_tracklets": int(len(y) - y.sum()),
+            "model_type": args.model_type,
+            "objective": args.objective,
+            "sample_weight_mean": float(sample_weights.mean()),
+            "sample_weight_min": float(sample_weights.min()),
+            "sample_weight_max": float(sample_weights.max()),
             "epochs": args.epochs,
             "lr": args.lr,
+            "weight_decay": args.weight_decay,
             "seed": args.seed,
             "history": history,
             "selected_threshold_metrics": selected,

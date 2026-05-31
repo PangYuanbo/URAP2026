@@ -277,6 +277,11 @@ def sequence_tracklet_features(rows: list[dict[str, Any]], config: SequenceGateC
     detector_high_background_drone = [
         d and b and h for d, b, h in zip(detector_flags, high_background_flags, high_drone_flags)
     ]
+    detector_high_background_flags = [bool(v) for v in detector_high_background]
+    detector_high_background_drone_flags = [bool(v) for v in detector_high_background_drone]
+    detector_objectness = [o for o, d in zip(objectness, detector_flags) if d]
+    detector_background = [b for b, d in zip(background, detector_flags) if d]
+    detector_drone = [dmax for dmax, d in zip(max_drone_per_row, detector_flags) if d]
     track_history = [_float_field(r, "track_history_len", 0.0) for r in rows]
     track_detector_updates = [_float_field(r, "track_detector_updates", 0.0) for r in rows]
     frames_since_detector = [_float_field(r, "track_frames_since_detector_update", 999.0) for r in rows]
@@ -316,6 +321,13 @@ def sequence_tracklet_features(rows: list[dict[str, Any]], config: SequenceGateC
         "high_background_rate": _mean([float(v) for v in high_background_flags]),
         "detector_high_background_rate": _mean([float(v) for v in detector_high_background]),
         "detector_high_background_drone_rate": _mean([float(v) for v in detector_high_background_drone]),
+        "longest_detector_high_background_streak": _longest_true_streak(detector_high_background_flags),
+        "detector_high_background_persistence": _longest_true_streak(detector_high_background_flags) / max(1, span),
+        "longest_detector_high_background_drone_streak": _longest_true_streak(detector_high_background_drone_flags),
+        "detector_high_background_drone_persistence": _longest_true_streak(detector_high_background_drone_flags) / max(1, span),
+        "mean_detector_objectness": _mean(detector_objectness),
+        "mean_detector_background": _mean(detector_background),
+        "mean_detector_drone": _mean(detector_drone),
         "background_detector_contradiction": _mean(
             [
                 max(0.0, b - d) * float(s)
