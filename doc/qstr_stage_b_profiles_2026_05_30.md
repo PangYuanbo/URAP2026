@@ -488,3 +488,46 @@ Full `122540` pairing fixed the sample-count problem but not the generalization 
 ## Next step
 
 Use the detached full-chain runner on data not used to choose the selector rule, then move the rule into live inference if it still improves the recall/FP tradeoff. The live version should expose explicit Stage B profile names and write `stage_b_profile_selected` plus `stage_b_profile_selection_reason` for every candidate.
+
+## V6 Clean Train/Calibration Split Trial
+
+The previous full `122540` trial still mixed the old 5-segment DJI calibration clips into the gate training roots. V6 fixes the experiment discipline:
+
+- train only: full `121932_14_1779921254906` plus full `122540_15_1779921105591`;
+- calibration only: the old 5 DJI segments from `dji_fly_20260522_113924_10_1779475848691`;
+- held-out once: `121806_13_1779921757607`, after calibration selection only.
+
+Train-only paired root:
+
+`D:\datasets\my_video\full_infer_compare\dji_stageb_paired_scene_gate_train_roots_dense_train_only_20260531`
+
+Gate training used `--sample-mode suppressed_recall_drone`, `--hard-tiny-max-side 48`, and min-precision variants from `0.50` to `0.90`.
+
+| gate | tracklets | positives | negatives | selected threshold | train precision | train recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| v6 p50 | 7396 | 121 | 7275 | 0.982068 | 0.5000 | 0.3802 |
+| v6 p70 | 7396 | 121 | 7275 | 0.993919 | 0.7000 | 0.2893 |
+| v6 p80 | 7396 | 121 | 7275 | 0.997294 | 0.8000 | 0.2314 |
+| v6 p90 | 7396 | 121 | 7275 | 0.998625 | 0.9200 | 0.1901 |
+
+Calibration-only selection:
+
+| gate | calibration recall | calibration FP | final/frame | approx precision |
+| --- | ---: | ---: | ---: | ---: |
+| v3 feature gate | 0.4634 | 2140 | 0.8564 | 0.0088 |
+| v5 full122540 p90 | 0.4634 | 2149 | 0.8600 | 0.0088 |
+| v6 p50 | 0.4634 | 2297 | 0.9187 | 0.0082 |
+| v6 p70 | 0.4634 | 2262 | 0.9048 | 0.0083 |
+| v6 p80 | 0.4634 | 2243 | 0.8973 | 0.0084 |
+| v6 p90 | 0.4634 | 2211 | 0.8846 | 0.0085 |
+
+V6 p90 was the best V6 variant on calibration, so it was evaluated once on `121806` held-out without any threshold adjustment:
+
+| gate | held-out candidate recall | held-out final recall | held-out FP | final/frame | approx precision |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| v3 feature gate | 0.9091 | 0.1010 | 2453 | 0.3765 | 0.0041 |
+| v6 p90 clean split | 0.9091 | 0.1010 | 2616 | 0.4015 | 0.0038 |
+
+Decision:
+
+V6 fixed the train/calibration leakage issue, but it did not improve the system. On calibration, every V6 gate preserved recall but added more FP than v3. On held-out, v6 p90 matched v3 recall but increased FP. Keep v3 as the best current recovery-profile experiment, and do not continue tuning `121806`. The next useful step is to build more positive scene-recovery tracklets from additional non-held-out DJI footage, or change the gate objective/model so persistent true DJI targets are not confused with persistent detector-supported false positives.
