@@ -580,3 +580,45 @@ Calibration-only result on the old 5 DJI segments:
 Decision:
 
 No V7 variant beats the v3 calibration baseline, so V7 was not evaluated on `121806`. This is intentional: held-out should only be touched after a non-held-out calibration improvement. The model/objective change alone is not enough with the current data. The next step is data-side: add more non-held-out DJI positive scene-recovery tracklets, ideally from clips where strict FP-control suppresses true persistent drone tracks but recall-oriented output keeps them.
+
+## V8 GT-Suppressed Candidate Mining Trial
+
+V8 addresses a data-side miss found during audit: the previous `suppressed_recall_drone` pool only sampled rows where the recall-oriented profile already predicted `drone`. That missed many useful positives where recall produced a candidate that matched GT but still classified it as background or assigned a low score.
+
+Audit on the clean train-only clips:
+
+| sequence | strict-suppressed GT-hit rows | rows already predicted drone by recall |
+| --- | ---: | ---: |
+| `121932_14_1779921254906` | 528 | 59 |
+| `122540_15_1779921105591` | 434 | 148 |
+
+Code change:
+
+`tools/train_stage_b_recovery_tracklet_gate.py` adds `--sample-mode gt_suppressed_candidate`.
+
+Sampling rule:
+
+- if a recall candidate is suppressed by the strict profile and matches train GT, keep it as a positive candidate even when recall classified it as background;
+- if an unmatched recall candidate is a high-score drone prediction, keep it as a hard negative;
+- do not sample rows already kept as drone by the strict profile.
+
+This expands the training pool:
+
+| pool | tracklets | positives | negatives |
+| --- | ---: | ---: | ---: |
+| v6 suppressed_recall_drone | 7396 | 121 | 7275 |
+| v8 gt_suppressed_candidate | 7585 | 324 | 7261 |
+
+V8 training and calibration:
+
+| gate | train precision | train recall | calibration recall | calibration FP | final/frame |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| v8 logistic p50 | 0.5000 | 0.8920 | 0.4634 | 2646 | 1.0571 |
+| v8 logistic p70 | 0.7018 | 0.8426 | 0.4634 | 2524 | 1.0087 |
+| v8 logistic p90 | 0.9000 | 0.6944 | 0.4634 | 2385 | 0.9536 |
+| v8 logistic p95 | 0.9548 | 0.6512 | 0.4634 | 2361 | 0.9441 |
+| v8 logistic p98 | 0.9851 | 0.6111 | 0.4634 | 2337 | 0.9345 |
+
+Decision:
+
+V8 successfully mines many more positive scene-recovery tracklets, but the added positives do not transfer to the 5-segment calibration split. Even the strict p98 gate has more calibration FP than v3 (`2337` vs `2140`) with no recall gain. V8 was therefore not evaluated on `121806`. Keep `gt_suppressed_candidate` as an offline data-mining tool, but do not promote the resulting gate. The next data step needs new non-held-out DJI clips or a better balanced calibration split; re-mining the same two clips is not enough.

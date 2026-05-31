@@ -151,9 +151,23 @@ def _enrich_with_diagnostics(pred_rows: list[dict[str, Any]], diag_rows: list[di
     return enriched
 
 
+def _row_matches_gt(
+    row: dict[str, Any],
+    gt_by_frame: dict[int, list[dict[str, Any]]],
+    args: argparse.Namespace,
+) -> bool:
+    bbox = _bbox(row)
+    frame_id = int(row.get("frame_id", -1))
+    return any(
+        _iou(bbox, gt["bbox"]) >= args.iou_threshold or _center_distance(bbox, gt["bbox"]) <= args.center_threshold
+        for gt in gt_by_frame.get(frame_id, [])
+    )
+
+
 def _sample_row(
     row: dict[str, Any],
     strict_row: dict[str, Any] | None,
+    gt_by_frame: dict[int, list[dict[str, Any]]],
     old_args: argparse.Namespace,
     args: argparse.Namespace,
 ) -> bool:
@@ -167,6 +181,14 @@ def _sample_row(
         if _max_side(row) > args.hard_tiny_max_side:
             return False
         return True
+    if args.sample_mode == "gt_suppressed_candidate":
+        if _is_drone(strict_row):
+            return False
+        if _max_side(row) > args.hard_tiny_max_side:
+            return False
+        if _row_matches_gt(row, gt_by_frame, args):
+            return True
+        return _is_drone(row) and _score(row) >= args.recall_min_score
     raise ValueError(f"Unknown sample mode: {args.sample_mode}")
 
 
@@ -197,7 +219,7 @@ def _collect_recall_root_samples(
         enriched_by_key = {_key(row): row for row in enriched_rows}
         rows = []
         for row in recall_pred_rows:
-            if not _sample_row(row, strict_by_key.get(_key(row)), old_args, args):
+            if not _sample_row(row, strict_by_key.get(_key(row)), gt_by_frame, old_args, args):
                 continue
             item = dict(enriched_by_key.get(_key(row), row))
             item["seq"] = recall_dir.name
@@ -401,7 +423,11 @@ def main() -> None:
     parser.add_argument("--strict-root", required=True)
     parser.add_argument("--extra-recall-roots", nargs="*", default=[])
     parser.add_argument("--out", required=True)
-    parser.add_argument("--sample-mode", choices=["old_scene_rule", "suppressed_recall_drone"], default="old_scene_rule")
+    parser.add_argument(
+        "--sample-mode",
+        choices=["old_scene_rule", "suppressed_recall_drone", "gt_suppressed_candidate"],
+        default="old_scene_rule",
+    )
     parser.add_argument("--hard-tiny-max-side", type=float, default=32.0)
     parser.add_argument("--recall-min-score", type=float, default=0.18)
     parser.add_argument("--recall-min-prob", type=float, default=0.55)
