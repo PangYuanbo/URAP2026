@@ -238,10 +238,19 @@ def _recovery_reason(
         return None
     drone_prob = _prob(recall_row, "drone")
     background = _prob(recall_row, "background")
-    if drone_prob < args.recall_min_prob or background > args.recall_max_background:
+    hard_tiny = _max_side(recall_row) <= args.hard_tiny_max_side
+    gate_background_override = (
+        hard_tiny
+        and getattr(args, "scene_tracklet_gate_required", False)
+        and getattr(args, "scene_tracklet_gate_override_background", False)
+        and scene_gate_score
+        and scene_gate_score.get("scene_tracklet_gate_pass") is True
+    )
+    if drone_prob < args.recall_min_prob:
+        return None
+    if background > args.recall_max_background and not gate_background_override:
         return None
 
-    hard_tiny = _max_side(recall_row) <= args.hard_tiny_max_side
     if _track_support(recall_row):
         return "recall_track_supported_recovery"
     if hard_tiny and getattr(args, "scene_tracklet_gate_required", False):
@@ -403,6 +412,7 @@ def select_profile(args: argparse.Namespace) -> dict[str, Any]:
             "scene_min_track_evidence_len": args.scene_min_track_evidence_len,
             "scene_tracklet_gate": args.scene_tracklet_gate,
             "scene_tracklet_gate_required": args.scene_tracklet_gate_required,
+            "scene_tracklet_gate_override_background": args.scene_tracklet_gate_override_background,
         },
     }
     Path(args.out).mkdir(parents=True, exist_ok=True)
@@ -442,6 +452,11 @@ def main() -> None:
     parser.add_argument("--scene-min-track-score", type=float, default=0.10)
     parser.add_argument("--scene-min-track-evidence-len", type=int, default=0)
     parser.add_argument("--scene-tracklet-gate", default="", help="Optional JSON logistic gate for scene hard-tiny recovery")
+    parser.add_argument(
+        "--scene-tracklet-gate-override-background",
+        action="store_true",
+        help="Allow a passing scene tracklet gate to recover hard-tiny rows even when final background exceeds recall-max-background.",
+    )
     parser.add_argument("--evaluate", action="store_true")
     parser.add_argument("--iou-threshold", type=float, default=0.3)
     parser.add_argument("--center-threshold", type=float, default=16.0)

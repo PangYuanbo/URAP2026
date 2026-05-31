@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 
 from qstr_dronedet.tracking.sequence_gate import SequenceGateConfig, build_sequence_tracklets, sequence_tracklet_features
 from tools.evaluate_dji_new2_profile_compare import _center_distance, _iou, _load_gt
-from tools.select_stage_b_profile_outputs import _key, _load_jsonl, _recovery_reason
+from tools.select_stage_b_profile_outputs import _is_drone, _key, _load_jsonl, _recovery_reason, _score
 
 
 FEATURE_NAMES = [
@@ -99,6 +99,11 @@ def _bbox(row: dict[str, Any]) -> list[float]:
     return [float(v) for v in value[:4]]
 
 
+def _max_side(row: dict[str, Any]) -> float:
+    x1, y1, x2, y2 = _bbox(row)
+    return max(0.0, x2 - x1, y2 - y1)
+
+
 def _match_tracklet(tracklet: list[dict[str, Any]], gt_by_frame: dict[int, list[dict[str, Any]]], iou_threshold: float, center_threshold: float) -> tuple[int, int]:
     hit_rows = 0
     for row in tracklet:
@@ -139,6 +144,25 @@ def _enrich_with_diagnostics(pred_rows: list[dict[str, Any]], diag_rows: list[di
     return enriched
 
 
+def _sample_row(
+    row: dict[str, Any],
+    strict_row: dict[str, Any] | None,
+    old_args: argparse.Namespace,
+    args: argparse.Namespace,
+) -> bool:
+    if args.sample_mode == "old_scene_rule":
+        return _recovery_reason(row, strict_row, old_args) == "recall_scene_hard_tiny_recovery"
+    if args.sample_mode == "suppressed_recall_drone":
+        if not _is_drone(row) or _is_drone(strict_row):
+            return False
+        if _score(row) < args.recall_min_score:
+            return False
+        if _max_side(row) > args.hard_tiny_max_side:
+            return False
+        return True
+    raise ValueError(f"Unknown sample mode: {args.sample_mode}")
+
+
 def _collect_recall_root_samples(
     recall_root: Path,
     strict_root: Path | None,
@@ -166,8 +190,7 @@ def _collect_recall_root_samples(
         enriched_by_key = {_key(row): row for row in enriched_rows}
         rows = []
         for row in recall_pred_rows:
-            reason = _recovery_reason(row, strict_by_key.get(_key(row)), old_args)
-            if reason != "recall_scene_hard_tiny_recovery":
+            if not _sample_row(row, strict_by_key.get(_key(row)), old_args, args):
                 continue
             item = dict(enriched_by_key.get(_key(row), row))
             item["seq"] = recall_dir.name
@@ -198,6 +221,7 @@ def _collect_recall_root_samples(
                     "track_id": track_id,
                     "label": label,
                     "hit_rows": hit_rows,
+                    "sample_mode": args.sample_mode,
                     **{name: feature_vector[i] for i, name in enumerate(FEATURE_NAMES)},
                 }
             )
@@ -303,6 +327,7 @@ def main() -> None:
     parser.add_argument("--strict-root", required=True)
     parser.add_argument("--extra-recall-roots", nargs="*", default=[])
     parser.add_argument("--out", required=True)
+    parser.add_argument("--sample-mode", choices=["old_scene_rule", "suppressed_recall_drone"], default="old_scene_rule")
     parser.add_argument("--hard-tiny-max-side", type=float, default=32.0)
     parser.add_argument("--recall-min-score", type=float, default=0.18)
     parser.add_argument("--recall-min-prob", type=float, default=0.55)

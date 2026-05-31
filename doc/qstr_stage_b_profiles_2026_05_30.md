@@ -404,6 +404,37 @@ Decision:
 
 The v3 feature gate is the best recovery-profile variant so far for `121806`: it keeps the same held-out recall as the dense-positive v2 strict and paired gates while reducing held-out FP. It still should not replace the conservative default because the absolute precision is low and it does not recover additional held-out positives. The next blocker is data, not thresholding: add more true positive scene-recovery tracklets from non-held-out DJI clips and hard negatives with the same persistent detector support pattern.
 
+## V4 Suppressed-Drone Pool Trial
+
+URA-27 starts from the observation that the previous training set was too narrow: it only sampled rows that already passed the old `recall_scene_hard_tiny_recovery` rule. The v4 trial adds:
+
+- `--sample-mode suppressed_recall_drone` in `tools/train_stage_b_recovery_tracklet_gate.py`;
+- a larger training pool made from recall rows that predict `drone` while the strict profile suppresses the same candidate;
+- `--scene-tracklet-gate-override-background` in `tools/select_stage_b_profile_outputs.py`, so a passing gate can recover a hard-tiny row even when branch/final background is high;
+- hard-tiny cap `48 px` selected on the non-held-out training pool, not on `121806`.
+
+Gate output:
+
+`D:\datasets\my_video\full_infer_compare\dji_stageb_scene_tracklet_gate_v4_suppressed_drone48_train_20260531\scene_tracklet_gate.json`
+
+Training summary:
+
+| tracklets | positives | negatives | selected threshold | train precision | train recall |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 4897 | 35 | 4862 | 0.982449 | 0.5143 | 0.5143 |
+
+Fixed-gate evaluation:
+
+| split | GT | candidate recall | final recall | final/frame | approx FP | approx precision |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| paired train-fit | 1165 | 0.8970 | 0.1991 | 0.5895 | 3820 | 0.0573 |
+| non-held-out calibration | 41 | 0.9024 | 0.4634 | 0.8631 | 2157 | 0.0087 |
+| `121806` held-out | 99 | 0.9091 | 0.1010 | 0.3776 | 2460 | 0.0040 |
+
+Decision:
+
+V4 expands the positive pool from `21` to `35` tracklets and enables gate-controlled background override, but it does not beat v3 on `121806`: recall is unchanged and FP is slightly higher (`2460` vs `2453`). Keep the code path because it is the right mechanism for future data, but do not make this gate the default. The remaining blocker is still data density: we need many more non-held-out positive scene-recovery tracklets, not another held-out threshold tweak.
+
 ## Next step
 
 Use the detached full-chain runner on data not used to choose the selector rule, then move the rule into live inference if it still improves the recall/FP tradeoff. The live version should expose explicit Stage B profile names and write `stage_b_profile_selected` plus `stage_b_profile_selection_reason` for every candidate.

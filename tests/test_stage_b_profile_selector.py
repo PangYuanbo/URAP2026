@@ -28,6 +28,7 @@ def _args():
         scene_max_frames_since_detector_update=1,
         scene_min_track_score=0.10,
         scene_min_track_evidence_len=0,
+        scene_tracklet_gate_override_background=False,
     )
 
 
@@ -138,4 +139,33 @@ def test_stage_b_selector_uses_scene_tracklet_gate_for_scene_recovery():
     assert selected[0]["predicted_class"] == "drone"
     assert selected[0]["stage_b_profile_selection_reason"] == "recall_scene_hard_tiny_recovery"
     assert selected[0]["scene_tracklet_gate_prob"] == 0.9
+    assert counts["recall_scene_hard_tiny_recovery"] == 1
+
+
+def test_stage_b_selector_gate_can_override_background_for_persistent_hard_tiny():
+    recall = _row(
+        predicted_class="drone",
+        score=0.24,
+        drone=0.65,
+        background=0.85,
+        bbox=[10.0, 10.0, 30.0, 25.0],
+        mode="bad_alignment_fast_egomotion",
+    )
+    strict = _row(
+        predicted_class="background",
+        score=0.05,
+        drone=0.1,
+        background=0.9,
+        bbox=[10.0, 10.0, 30.0, 25.0],
+        mode="bad_alignment_fast_egomotion",
+    )
+    args = _args()
+    args.scene_tracklet_gate_required = True
+    args.scene_tracklet_gate_override_background = True
+    key = (1, (10.0, 10.0, 30.0, 25.0))
+
+    selected, counts = select_rows([recall], [strict], args, scene_gate_scores={key: {"scene_tracklet_gate_pass": True, "scene_tracklet_gate_prob": 0.91}})
+
+    assert selected[0]["predicted_class"] == "drone"
+    assert selected[0]["stage_b_profile_selection_reason"] == "recall_scene_hard_tiny_recovery"
     assert counts["recall_scene_hard_tiny_recovery"] == 1
