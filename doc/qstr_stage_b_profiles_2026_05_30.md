@@ -435,6 +435,56 @@ Decision:
 
 V4 expands the positive pool from `21` to `35` tracklets and enables gate-controlled background override, but it does not beat v3 on `121806`: recall is unchanged and FP is slightly higher (`2460` vs `2453`). Keep the code path because it is the right mechanism for future data, but do not make this gate the default. The remaining blocker is still data density: we need many more non-held-out positive scene-recovery tracklets, not another held-out threshold tweak.
 
+## V5 Full-122540 Pairing Trial
+
+URA-27 then completed the missing `122540` recall-oriented full run so it could be paired with the existing strict full run instead of using only the old 900-frame overlap.
+
+New recall output:
+
+`D:\datasets\my_video\full_infer_compare\dji_dense_122540_balanced_v2_stageb_repaired_pool_full_stride2_20260531\balanced_v2_dji_stable_no_promotion\yolo_only\122540_15_1779921105591`
+
+Run summary:
+
+| sequence | frames | GT | candidate recall | final recall | final/frame | approx FP |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `122540_15_1779921105591` | 3377 | 560 | 0.8679 | 0.4696 | 4.1312 | 13688 |
+
+New paired roots:
+
+- recall: `D:\datasets\my_video\full_infer_compare\dji_stageb_paired_scene_gate_train_roots_full122540_20260531\recall_yolo_only`
+- strict: `D:\datasets\my_video\full_infer_compare\dji_stageb_paired_scene_gate_train_roots_full122540_20260531\strict_yolo_only`
+
+The full pairing increased the gate training pool substantially:
+
+| gate | tracklets | positives | negatives | selected threshold | train precision | train recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| v4 suppressed-drone48 | 4897 | 35 | 4862 | 0.982449 | 0.5143 | 0.5143 |
+| v5 full122540 p50 | 9742 | 126 | 9616 | 0.979480 | 0.5055 | 0.3651 |
+| v5 full122540 p70 | 9742 | 126 | 9616 | 0.993289 | 0.7556 | 0.2698 |
+| v5 full122540 p80 | 9742 | 126 | 9616 | 0.998129 | 0.8000 | 0.1587 |
+| v5 full122540 p90 | 9742 | 126 | 9616 | 0.999369 | 0.9333 | 0.1111 |
+
+Calibration-only selection:
+
+| gate | calibration recall | calibration FP | final/frame |
+| --- | ---: | ---: | ---: |
+| v5 p50 | 0.4634 | 2232 | 0.8929 |
+| v5 p70 | 0.4634 | 2183 | 0.8735 |
+| v5 p80 | 0.4634 | 2164 | 0.8659 |
+| v5 p90 | 0.4634 | 2149 | 0.8600 |
+
+The p90 gate was selected from calibration because it had the lowest v5 calibration FP while keeping calibration recall unchanged. It was then evaluated once on `121806` held-out:
+
+| gate | held-out recall | held-out FP | final/frame | approx precision |
+| --- | ---: | ---: | ---: | ---: |
+| v3 feature gate | 0.1010 | 2453 | 0.3765 | 0.0041 |
+| v5 full122540 p50 | 0.0909 | 2616 | 0.4013 | 0.0034 |
+| v5 full122540 p90 | 0.0909 | 2511 | 0.3853 | 0.0036 |
+
+Decision:
+
+Full `122540` pairing fixed the sample-count problem but not the generalization problem. The larger pool contains more positive scene-recovery tracklets, but it also teaches the gate a recovery pattern that does not transfer to `121806`. Keep v3 feature gate as the best current recovery-profile experiment. URA-27 remains open for the next data step: add another non-held-out DJI clip or split current dense clips into a real train/calibration partition before touching held-out again.
+
 ## Next step
 
 Use the detached full-chain runner on data not used to choose the selector rule, then move the rule into live inference if it still improves the recall/FP tradeoff. The live version should expose explicit Stage B profile names and write `stage_b_profile_selected` plus `stage_b_profile_selection_reason` for every candidate.
