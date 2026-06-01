@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NPS Optical-Flow Motion Boundary Gallery - Drive Links</title>
+  <style>
+    :root { color-scheme: dark; --bg:#101214; --panel:#191d20; --panel2:#22282c; --text:#edf1f4; --muted:#9aa6ad; --line:#343c42; --accent:#27d35f; --good:#86efac; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow: hidden; }
+    .app { height: 100vh; display: grid; grid-template-columns: 360px 1fr; }
+    aside { min-width: 0; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+    header { padding: 18px; border-bottom: 1px solid var(--line); }
+    h1 { margin: 0 0 8px; font-size: 18px; }
+    .sub { color: var(--muted); font-size: 12px; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+    .stat { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+    .stat strong { display:block; font-size: 17px; }
+    .stat span { color: var(--muted); font-size: 12px; }
+    .controls { display: grid; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+    input, select { width: 100%; background: #0f1214; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 10px 11px; }
+    .list { overflow: auto; padding: 10px; display: grid; gap: 8px; align-content: start; }
+    .item { display: grid; grid-template-columns: 96px 1fr; gap: 10px; padding: 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+    .item:hover, .item.active { background: var(--panel2); border-color: var(--line); }
+    .thumb { width: 96px; aspect-ratio: 16/9; object-fit: cover; border-radius: 4px; background: #050606; }
+    .name { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mini { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .ready { color: var(--good); }
+    main { min-width: 0; display: grid; grid-template-rows: auto 1fr auto; }
+    .topbar { padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+    .title h2 { margin: 0; font-size: 19px; }
+    .title p { margin: 4px 0 0; color: var(--muted); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    button, a.button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 9px 12px; text-decoration: none; cursor: pointer; }
+    button:hover, a.button:hover { border-color: var(--accent); }
+    .stage { min-height: 0; display: grid; place-items: center; padding: 16px 20px; }
+    iframe { width: min(100%, 1480px); height: min(76vh, 840px); background: black; border: 1px solid var(--line); border-radius: 6px; }
+    .footer { padding: 12px 20px; color: var(--muted); border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+    @media (max-width: 900px) { body { overflow:auto; } .app { grid-template-columns: 1fr; height:auto; } .list { max-height: 420px; } .topbar, .footer { flex-direction: column; align-items: flex-start; } iframe { height: 56vh; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <header>
+        <h1>NPS Optical-Flow Motion Boundary</h1>
+        <div class="sub">Google Drive external preview links</div>
+        <div class="stats">
+          <div class="stat"><strong id="totalCount">0</strong><span>videos</span></div>
+          <div class="stat"><strong id="testCount">0</strong><span>test</span></div>
+          <div class="stat"><strong id="valCount">0</strong><span>val</span></div>
+        </div>
+      </header>
+      <div class="controls">
+        <input id="search" placeholder="Search Clip ID">
+        <select id="split">
+          <option value="all">All splits</option>
+          <option value="test">Test</option>
+          <option value="val">Val</option>
+        </select>
+      </div>
+      <div id="list" class="list"></div>
+    </aside>
+    <main>
+      <div class="topbar">
+        <div class="title">
+          <h2 id="videoTitle">Loading...</h2>
+          <p id="videoMeta"></p>
+        </div>
+        <div class="actions">
+          <button id="prev">Previous</button>
+          <button id="next">Next</button>
+          <a id="openFile" class="button" href="#" target="_blank" rel="noreferrer">Open Drive Video</a>
+          <a class="button" href="https://drive.google.com/drive/folders/1HNk5cvrRF1bqxJtPVsikvOUPHYbztpEq" target="_blank" rel="noreferrer">Drive Folder</a>
+        </div>
+      </div>
+      <div class="stage"><iframe id="player" allow="autoplay; fullscreen" allowfullscreen></iframe></div>
+      <div class="footer">
+        <span id="path"></span>
+        <span>Playback requires access to the linked Google Drive files.</span>
+      </div>
+    </main>
+  </div>
+  <script>
+    const state = { videos: [], filtered: [], current: 0 };
+    const els = {
+      list: document.getElementById('list'), search: document.getElementById('search'), split: document.getElementById('split'),
+      player: document.getElementById('player'), title: document.getElementById('videoTitle'), meta: document.getElementById('videoMeta'),
+      path: document.getElementById('path'), openFile: document.getElementById('openFile'), prev: document.getElementById('prev'), next: document.getElementById('next'),
+      total: document.getElementById('totalCount'), test: document.getElementById('testCount'), val: document.getElementById('valCount')
+    };
+    function renderList() {
+      els.list.innerHTML = '';
+      state.filtered.forEach((v, idx) => {
+        const btn = document.createElement('button');
+        btn.className = `item ${idx === state.current ? 'active' : ''}`;
+        btn.innerHTML = `<img class="thumb" src="${v.poster || ''}" alt=""><span><span class="name">${v.video}</span><span class="mini">${v.split} | ${v.frames} frames</span><span class="mini">${v.method}</span><span class="mini ready">Drive linked</span></span>`;
+        btn.addEventListener('click', () => selectVideo(idx));
+        els.list.appendChild(btn);
+      });
+    }
+    function applyFilters() {
+      const q = els.search.value.trim().toLowerCase();
+      const split = els.split.value;
+      state.filtered = state.videos.filter(v => (split === 'all' || v.split === split) && (!q || v.video.toLowerCase().includes(q)));
+      state.current = Math.min(state.current, Math.max(0, state.filtered.length - 1));
+      renderList();
+      selectVideo(state.current);
+    }
+    function selectVideo(idx) {
+      if (!state.filtered.length) return;
+      state.current = Math.max(0, Math.min(idx, state.filtered.length - 1));
+      const v = state.filtered[state.current];
+      els.title.textContent = `${v.split.toUpperCase()} / ${v.video}`;
+      els.meta.textContent = `${v.frames} frames | ${state.current + 1}/${state.filtered.length}`;
+      els.path.textContent = v.drive_url;
+      els.player.src = v.embed_url;
+      els.openFile.href = v.drive_url;
+      [...els.list.children].forEach((el, i) => el.classList.toggle('active', i === state.current));
+    }
+    els.search.addEventListener('input', applyFilters);
+    els.split.addEventListener('change', applyFilters);
+    els.prev.addEventListener('click', () => selectVideo(state.current - 1));
+    els.next.addEventListener('click', () => selectVideo(state.current + 1));
+    fetch('videos_external.json').then(r => r.json()).then(videos => {
+      state.videos = videos;
+      state.filtered = videos;
+      els.total.textContent = videos.length;
+      els.test.textContent = videos.filter(v => v.split === 'test').length;
+      els.val.textContent = videos.filter(v => v.split === 'val').length;
+      renderList();
+      selectVideo(0);
+    }).catch(err => { els.title.textContent = 'Failed to load videos_external.json'; els.meta.textContent = String(err); });
+  </script>
+</body>
+</html>
