@@ -302,10 +302,12 @@ class VideoActionTrackletDataset(Dataset):
         self.use_crops = bool(use_crops)
         self._frame_cache: OrderedDict[str, np.ndarray] = OrderedDict()
         self.items = _read_jsonl(tracklet_jsonl)
+        self._rows_by_item: list[list[dict[str, Any]]] = []
         self.samples: list[tuple[int, int]] = []
         total = past_len + future_len
         for item_index, item in enumerate(self.items):
             rows = sorted(list(item.get("rows") or []), key=lambda row: int(float(row.get("frame_id", 0) or 0)))
+            self._rows_by_item.append(rows)
             if min_tracklet_rows > 0 and len(rows) < min_tracklet_rows:
                 continue
             for start in range(0, len(rows) - total + 1):
@@ -319,7 +321,7 @@ class VideoActionTrackletDataset(Dataset):
     def _window(self, index: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         item_index, start = self.samples[index]
         item = self.items[item_index]
-        rows = sorted(list(item.get("rows") or []), key=lambda row: int(float(row.get("frame_id", 0) or 0)))
+        rows = self._rows_by_item[item_index]
         return dict(item.get("meta") or {}), rows[start : start + self.past_len + self.future_len]
 
     def _load_frame_cached(self, path: Path | None, fallback_size: tuple[int, int]) -> np.ndarray:
