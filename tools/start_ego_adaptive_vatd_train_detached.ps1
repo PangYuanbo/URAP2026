@@ -43,6 +43,7 @@ if (-not (Test-Path -Path $TrackletJsonl -PathType Leaf)) { throw "TrackletJsonl
 if ($FrameRoot -and -not (Test-Path -Path $FrameRoot -PathType Container)) { throw "FrameRoot not found: $FrameRoot" }
 if ($BatchSize -lt 1) { throw 'BatchSize must be >= 1.' }
 if ($NumWorkers -lt 0) { throw 'NumWorkers must be >= 0.' }
+if ($FrameCacheSize -gt 128) { throw 'FrameCacheSize above 128 can exhaust memory with full-resolution video frames; use 32-64 unless you have measured headroom.' }
 if ($Shuffle -and $NoShuffle) { throw 'Use only one of -Shuffle or -NoShuffle.' }
 if (-not $Shuffle) { $NoShuffle = $true }
 $parsedHorizons = @()
