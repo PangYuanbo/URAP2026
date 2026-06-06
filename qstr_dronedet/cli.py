@@ -136,9 +136,11 @@ from qstr_dronedet.tracking.tracklet_classifier import (
 )
 from qstr_dronedet.tracking.video_action_policy import (
     attach_vatd_scores_to_tracklets,
+    score_tracklets_with_ego_adaptive_vatd_policy,
     score_tracklets_with_vatd_motion_action_policy,
     score_tracklets_with_video_action_multihead_policy,
     score_tracklets_with_video_action_policy,
+    train_ego_adaptive_vatd_policy,
     train_vatd_motion_action_policy,
     train_video_action_chunk_policy,
     train_video_action_multihead_policy,
@@ -1597,6 +1599,64 @@ def cmd_train_vatd_motion_action_policy(args: argparse.Namespace) -> None:
 
 def cmd_score_vatd_motion_action_tracklets(args: argparse.Namespace) -> None:
     result = score_tracklets_with_vatd_motion_action_policy(
+        args.tracklet_jsonl,
+        args.weights,
+        args.out,
+        frame_root=args.frame_root,
+        image_name_template=args.image_name_template,
+        error_scale=args.error_scale,
+        min_tracklet_rows=args.min_tracklet_rows,
+        max_samples=args.max_samples,
+        fusion_mode=args.fusion_mode,
+        allow_missing_images=args.allow_missing_images,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        frame_cache_size=args.frame_cache_size,
+        use_crops=not args.disable_crops,
+    )
+    print(json.dumps({"jsonl": str(result.out_path), **result.summary}, indent=2))
+
+
+def cmd_train_ego_adaptive_vatd_policy(args: argparse.Namespace) -> None:
+    image_size = None
+    if args.image_width is not None or args.image_height is not None:
+        if args.image_width is None or args.image_height is None:
+            raise ValueError("--image-width and --image-height must be provided together")
+        image_size = (args.image_width, args.image_height)
+    out = train_ego_adaptive_vatd_policy(
+        args.tracklet_jsonl,
+        args.out,
+        frame_root=args.frame_root,
+        image_name_template=args.image_name_template,
+        past_len=args.past_len,
+        future_len=args.future_len,
+        horizons=tuple(args.horizons),
+        crop_size=args.crop_size,
+        crop_scale=args.crop_scale,
+        image_size=image_size,
+        min_tracklet_rows=args.min_tracklet_rows,
+        max_samples=args.max_samples,
+        epochs=args.epochs,
+        lr=args.lr,
+        batch_size=args.batch_size,
+        d_model=args.d_model,
+        nhead=args.nhead,
+        num_layers=args.num_layers,
+        action_loss_weight=args.action_loss_weight,
+        allow_missing_images=args.allow_missing_images,
+        num_workers=args.num_workers,
+        frame_cache_size=args.frame_cache_size,
+        motion_pos_weight=args.motion_pos_weight,
+        pin_memory=not args.no_pin_memory,
+        shuffle=not args.no_shuffle,
+        use_crops=not args.disable_crops,
+        verbose=not args.quiet,
+    )
+    print(json.dumps({"weights": str(out)}, indent=2))
+
+
+def cmd_score_ego_adaptive_vatd_tracklets(args: argparse.Namespace) -> None:
+    result = score_tracklets_with_ego_adaptive_vatd_policy(
         args.tracklet_jsonl,
         args.weights,
         args.out,
@@ -3770,6 +3830,54 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--allow-missing-images", action="store_true", help="Use black frames for missing images; for smoke tests only")
     p.add_argument("--disable-crops", action="store_true", help="Use zero crop tensors and score from bbox/state/motion features only")
     p.set_defaults(func=cmd_score_vatd_motion_action_tracklets)
+
+    p = sub.add_parser("train-ego-adaptive-vatd-policy")
+    p.add_argument("--tracklet-jsonl", required=True, help="Tracklet JSONL with labels, frame ids, bboxes, and optional camera motion fields")
+    p.add_argument("--out", required=True, help="Output ego-adaptive VATD .pt checkpoint")
+    p.add_argument("--frame-root", default=None, help="Root containing video frames")
+    p.add_argument("--image-name-template", default="{seq}_{frame_id_05d}.png")
+    p.add_argument("--past-len", type=int, default=7)
+    p.add_argument("--future-len", type=int, default=2)
+    p.add_argument("--horizons", nargs="+", type=int, default=[3, 5, 7], help="Soft-routed action chunk horizons, each <= past-len")
+    p.add_argument("--crop-size", type=int, default=64)
+    p.add_argument("--crop-scale", type=float, default=4.0)
+    p.add_argument("--image-width", type=int, default=None)
+    p.add_argument("--image-height", type=int, default=None)
+    p.add_argument("--min-tracklet-rows", type=int, default=0)
+    p.add_argument("--max-samples", type=int, default=None)
+    p.add_argument("--epochs", type=int, default=5)
+    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--batch-size", type=int, default=16)
+    p.add_argument("--d-model", type=int, default=96)
+    p.add_argument("--nhead", type=int, default=4)
+    p.add_argument("--num-layers", type=int, default=2)
+    p.add_argument("--action-loss-weight", type=float, default=0.25)
+    p.add_argument("--motion-pos-weight", default="auto", help="Positive class weight for motion-action BCE; use 'auto' or a positive number")
+    p.add_argument("--num-workers", type=int, default=0)
+    p.add_argument("--frame-cache-size", type=int, default=8, help="Per-worker in-memory decoded-frame LRU size; uses RAM, not disk")
+    p.add_argument("--no-pin-memory", action="store_true", help="Disable DataLoader pinned memory for large Windows/CUDA batches")
+    p.add_argument("--no-shuffle", action="store_true", help="Preserve dataset order so per-worker frame cache can improve video crop IO")
+    p.add_argument("--disable-crops", action="store_true", help="Train from bbox/score/visible state only without image crop decoding")
+    p.add_argument("--allow-missing-images", action="store_true", help="Use black frames for missing images; for smoke tests only")
+    p.add_argument("--quiet", action="store_true")
+    p.set_defaults(func=cmd_train_ego_adaptive_vatd_policy)
+
+    p = sub.add_parser("score-ego-adaptive-vatd-tracklets")
+    p.add_argument("--tracklet-jsonl", required=True, help="Tracklet JSONL with labels, frame ids, bboxes, and optional camera motion fields")
+    p.add_argument("--weights", required=True, help="Ego-adaptive VATD .pt checkpoint")
+    p.add_argument("--out", required=True, help="Output per-tracklet ego-adaptive VATD scores")
+    p.add_argument("--frame-root", default=None)
+    p.add_argument("--image-name-template", default="{seq}_{frame_id_05d}.png")
+    p.add_argument("--error-scale", type=float, default=0.02)
+    p.add_argument("--min-tracklet-rows", type=int, default=0)
+    p.add_argument("--max-samples", type=int, default=None)
+    p.add_argument("--fusion-mode", choices=["motion_action", "motion_times_action_consistency"], default="motion_action")
+    p.add_argument("--batch-size", type=int, default=16)
+    p.add_argument("--num-workers", type=int, default=0)
+    p.add_argument("--frame-cache-size", type=int, default=8, help="Per-worker in-memory decoded-frame LRU size; uses RAM, not disk")
+    p.add_argument("--allow-missing-images", action="store_true", help="Use black frames for missing images; for smoke tests only")
+    p.add_argument("--disable-crops", action="store_true", help="Use zero crop tensors and score from bbox/state/motion features only")
+    p.set_defaults(func=cmd_score_ego_adaptive_vatd_tracklets)
 
     p = sub.add_parser("attach-vatd-scores-to-tracklets")
     p.add_argument("--tracklet-jsonl", required=True, help="Original nested tracklets JSONL")
