@@ -17,6 +17,8 @@
   [Nullable[int]]$StartFrame = $null,
   [Nullable[int]]$EndFrame = $null,
   [switch]$RenderOverlay,
+  [switch]$SavePredLabels,
+  [switch]$SavePredJsonl,
   [double]$OverlayAlpha = 0.88,
   [int]$PanelHeight = 220,
   [int]$LineWidth = 3,
@@ -84,6 +86,12 @@ if ($null -ne $EndFrame) {
 }
 if ($RenderOverlay) {
   $argList += '--render-overlay'
+}
+if ($SavePredLabels) {
+  $argList += '--save-pred-labels'
+}
+if ($SavePredJsonl) {
+  $argList += '--save-pred-jsonl'
 }
 if ($OverlayAlpha -ne 0.88) {
   $argList += @('--overlay-alpha', [string]$OverlayAlpha)

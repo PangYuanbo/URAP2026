@@ -52,3 +52,12 @@ URAP-UAV-to-UAV-Detection-and-Tracking/
 # Paper PDFs are documented by name in doc/*.md but not stored in git
 doc/*.pdf
 doc/_texts/
+doc/_failed/
+doc/*.url
+doc/.venv/
+doc/perf_scan*.json
+doc/index.json
+doc/scans.json
+
+# Local research scratch workspace
+autoresearch/

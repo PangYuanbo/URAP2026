@@ -55,6 +55,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--overlay-alpha', type=float, default=0.88, help='Alpha for the appended chart panel, between 0 and 1.')
     parser.add_argument('--panel-height', type=int, default=220)
     parser.add_argument('--line-width', type=int, default=3)
+    parser.add_argument('--save-pred-labels', action='store_true', help='Save per-image YOLO txt predictions with confidence.')
+    parser.add_argument('--save-pred-jsonl', action='store_true', help='Save per-box predictions as JSONL for Route-B/action rescoring.')
     parser.add_argument('--exist-ok', action='store_true')
     return parser.parse_args()
 
@@ -218,6 +220,24 @@ def write_csv(path: Path, rows: Sequence[Dict[str, float]], fieldnames: Sequence
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
+
+
+def clip_xyxy(box: Sequence[float], width: int, height: int) -> Tuple[float, float, float, float]:
+    x1, y1, x2, y2 = (float(v) for v in box[:4])
+    x1 = min(max(x1, 0.0), float(width))
+    y1 = min(max(y1, 0.0), float(height))
+    x2 = min(max(x2, 0.0), float(width))
+    y2 = min(max(y2, 0.0), float(height))
+    return x1, y1, x2, y2
+
+
+def xyxy_to_yolo_line(box: Sequence[float], conf: float, cls: int, width: int, height: int) -> str:
+    x1, y1, x2, y2 = clip_xyxy(box, width, height)
+    bw = max(0.0, x2 - x1)
+    bh = max(0.0, y2 - y1)
+    cx = x1 + bw / 2.0
+    cy = y1 + bh / 2.0
+    return f'{cls} {cx / width:.8f} {cy / height:.8f} {bw / width:.8f} {bh / height:.8f} {conf:.8f}'
 
 
 def render_plot_png(windows: Sequence[Dict[str, float]], metric_name: str, title: str, out_path: Path) -> None:
@@ -406,10 +426,15 @@ def evaluate(args: argparse.Namespace) -> Dict[str, object]:
     plots_dir = args.output_dir / 'plots'
     frame_scores_dir = args.output_dir / 'frame_scores'
     overlay_dir = args.output_dir / 'overlay_videos'
+    pred_labels_dir = args.output_dir / 'pred_labels'
+    pred_jsonl_path = args.output_dir / 'predictions.jsonl'
     for path in (per_frame_dir, per_window_dir, plots_dir, frame_scores_dir):
         path.mkdir(parents=True, exist_ok=True)
     if args.render_overlay:
         overlay_dir.mkdir(parents=True, exist_ok=True)
+    if args.save_pred_labels:
+        pred_labels_dir.mkdir(parents=True, exist_ok=True)
+    pred_jsonl_handle = pred_jsonl_path.open('w', encoding='utf-8') if args.save_pred_jsonl else None
 
     requested_videos = set(args.video_filter or [])
     image_candidates = read_list(images_list)
@@ -479,6 +504,7 @@ def evaluate(args: argparse.Namespace) -> Dict[str, object]:
             if video_name not in video_meta_cache:
                 video_meta_cache[video_name] = get_video_metadata(discover_video_path(video_root, video_name))
             shape = shapes[sample_index][0]
+            orig_height, orig_width = int(shape[0]), int(shape[1])
             nl = len(labels)
 
             if len(pred):
@@ -511,6 +537,47 @@ def evaluate(args: argparse.Namespace) -> Dict[str, object]:
             matched_confidence = float(conf_np[correct_np[:, 0]].max()) if correct_np.size and correct_np[:, 0].any() else 0.0
             frame_correct = float(1.0 if gt_count > 0 and fn == 0 and tp > 0 else 0.0)
 
+            if args.save_pred_labels and pred_count:
+                pred_label_path = pred_labels_dir / f'{Path(path).stem}.txt'
+                pred_label_lines = [
+                    xyxy_to_yolo_line(
+                        row[:4].detach().cpu().tolist(),
+                        float(row[4].item()),
+                        int(row[5].item()),
+                        orig_width,
+                        orig_height,
+                    )
+                    for row in predn
+                ]
+                pred_label_path.write_text('\n'.join(pred_label_lines) + '\n', encoding='utf-8')
+
+            if pred_jsonl_handle is not None and pred_count:
+                pred_cpu = predn.detach().cpu().numpy()
+                correct_flat = correct_np[:, 0] if correct_np.size else np.zeros((0,), dtype=bool)
+                for pred_index, row in enumerate(pred_cpu):
+                    x1, y1, x2, y2 = clip_xyxy(row[:4], orig_width, orig_height)
+                    out_row = {
+                        'video': video_name,
+                        'seq': video_name,
+                        'frame_index': frame_index,
+                        'frame_id': frame_index,
+                        'timestamp_sec': timestamp_sec,
+                        'bbox': [x1, y1, x2, y2],
+                        'conf': float(row[4]),
+                        'objectness': float(row[4]),
+                        'final_drone_score': float(row[4]),
+                        'class_id': int(row[5]),
+                        'prediction_index': pred_index,
+                        'is_tp_match_iou': bool(correct_flat[pred_index]) if pred_index < len(correct_flat) else False,
+                        'match_iou': args.match_iou,
+                        'image_path': path,
+                        'motion_image_path': paths2[sample_index],
+                        'image_width': orig_width,
+                        'image_height': orig_height,
+                        'source': 'yolomg_lowconf',
+                    }
+                    pred_jsonl_handle.write(json.dumps(out_row, ensure_ascii=False) + '\n')
+
             per_video_records[video_name].append({
                 'video': video_name,
                 'frame_index': frame_index,
@@ -535,6 +602,9 @@ def evaluate(args: argparse.Namespace) -> Dict[str, object]:
             })
             total_frames += 1
 
+    if pred_jsonl_handle is not None:
+        pred_jsonl_handle.close()
+
     manifest = {
         'weights': str(weights),
         'images_list': str(images_list),
@@ -551,6 +621,10 @@ def evaluate(args: argparse.Namespace) -> Dict[str, object]:
         'render_overlay': bool(args.render_overlay),
         'overlay_alpha': args.overlay_alpha,
         'panel_height': args.panel_height,
+        'save_pred_labels': bool(args.save_pred_labels),
+        'pred_labels_dir': str(pred_labels_dir) if args.save_pred_labels else None,
+        'save_pred_jsonl': bool(args.save_pred_jsonl),
+        'pred_jsonl': str(pred_jsonl_path) if args.save_pred_jsonl else None,
         'videos': {},
         'total_frames': total_frames,
     }
