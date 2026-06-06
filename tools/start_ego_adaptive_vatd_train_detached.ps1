@@ -26,6 +26,7 @@ param(
   [int]$MinCFreeGb = 20,
   [switch]$NoPinMemory,
   [switch]$NoShuffle,
+  [switch]$Shuffle,
   [switch]$DisableCrops,
   [switch]$AllowMissingImages,
   [string]$RunId = 'ego_adaptive_vatd_train',
@@ -42,6 +43,8 @@ if (-not (Test-Path -Path $TrackletJsonl -PathType Leaf)) { throw "TrackletJsonl
 if ($FrameRoot -and -not (Test-Path -Path $FrameRoot -PathType Container)) { throw "FrameRoot not found: $FrameRoot" }
 if ($BatchSize -lt 1) { throw 'BatchSize must be >= 1.' }
 if ($NumWorkers -lt 0) { throw 'NumWorkers must be >= 0.' }
+if ($Shuffle -and $NoShuffle) { throw 'Use only one of -Shuffle or -NoShuffle.' }
+if (-not $Shuffle) { $NoShuffle = $true }
 $parsedHorizons = @()
 foreach ($item in $Horizons) {
   foreach ($part in ([string]$item -split ',')) {
