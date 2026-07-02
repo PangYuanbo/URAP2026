@@ -1,0 +1,190 @@
+{
+  "out_root": "runs/window_accuracy/papers",
+  "defaults": {
+    "fps": 30,
+    "window_seconds": 3,
+    "iou": 0.5,
+    "score_threshold": 0.25
+  },
+  "runs": [
+    {
+      "name": "yolomg_ard100_test",
+      "method": "YOLOMG",
+      "gt": "D:/URAP_datasets/ARD100_YOLOMG/labels/test",
+      "gt_format": "yolo-dir",
+      "frame_manifest": "D:/URAP_datasets/ARD100_YOLOMG/images/test",
+      "frame_manifest_format": "image-dir",
+      "pred": "runs/window_accuracy/papers/yolomg_ard100_test/eval/yolomg_ard100_test/labels",
+      "pred_format": "yolo-dir"
+    },
+    {
+      "name": "yolomg_official_val",
+      "method": "YOLOMG",
+      "gt": "runs/window_accuracy/yolomg_test_images_dataset/labels",
+      "gt_format": "yolo-dir",
+      "frame_manifest": "runs/window_accuracy/yolomg_test_images_dataset/images",
+      "frame_manifest_format": "image-dir",
+      "pred": "runs/window_accuracy/yolomg_test_images_eval/eval/official_val/labels",
+      "pred_format": "yolo-dir"
+    },
+    {
+      "name": "transvisdrone_nps_val",
+      "method": "TransVisDrone",
+      "gt": "datasets/TransVisDrone/NPS/NPSvisdroneStyle/val/labels",
+      "gt_format": "yolo-dir",
+      "gt_frame_offset": 1,
+      "frame_manifest": "datasets/TransVisDrone/NPS/AllFrames/val",
+      "frame_manifest_format": "image-dir",
+      "pred": "runs/window_accuracy/papers/transvisdrone_nps_val/eval/transvisdrone_nps_val/labels",
+      "pred_format": "yolo-dir"
+    },
+    {
+      "name": "transvisdrone_pkl_fl_best_augment_full_save",
+      "method": "TransVisDrone",
+      "gt": "papers/TransVisDrone/runs/val/Fl/image_size_1280_temporal_YOLO5L_5_frames_FL_end_to_end/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "gt_format": "tvd-pkl-gt",
+      "frame_manifest": "papers/TransVisDrone/runs/val/Fl/image_size_1280_temporal_YOLO5L_5_frames_FL_end_to_end/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "frame_manifest_format": "tvd-pkl-gt",
+      "pred": "papers/TransVisDrone/runs/val/Fl/image_size_1280_temporal_YOLO5L_5_frames_FL_end_to_end/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "pred_format": "tvd-pkl-pred"
+    },
+    {
+      "name": "transvisdrone_pkl_fl_640_test",
+      "method": "TransVisDrone",
+      "gt": "papers/TransVisDrone/runs/val/Fl/image_size_1280_temporal_YOLO5L_5_frames_FL_end_to_end/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "gt_format": "tvd-pkl-gt",
+      "frame_manifest": "papers/TransVisDrone/runs/val/Fl/image_size_1280_temporal_YOLO5L_5_frames_FL_end_to_end/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "frame_manifest_format": "tvd-pkl-gt",
+      "pred": "papers/TransVisDrone/runs/val/Fl/image_size_1280_temporal_YOLO5L_5_frames_FL_end_to_end/640_test/best_predictions.pkl",
+      "pred_format": "tvd-pkl-pred"
+    },
+    {
+      "name": "transvisdrone_pkl_fl_800_test",
+      "method": "TransVisDrone",
+      "gt": "papers/TransVisDrone/runs/val/Fl/image_size_1280_temporal_YOLO5L_5_frames_FL_end_to_end/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "gt_format": "tvd-pkl-gt",
+      "frame_manifest": "papers/TransVisDrone/runs/val/Fl/image_size_1280_temporal_YOLO5L_5_frames_FL_end_to_end/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "frame_manifest_format": "tvd-pkl-gt",
+      "pred": "papers/TransVisDrone/runs/val/Fl/image_size_1280_temporal_YOLO5L_5_frames_FL_end_to_end/800_test/best_predictions.pkl",
+      "pred_format": "tvd-pkl-pred"
+    },
+    {
+      "name": "transvisdrone_pkl_nps_best_augment_full_save",
+      "method": "TransVisDrone",
+      "gt": "papers/TransVisDrone/runs/val/NPS/image_size_1280_temporal_YOLO5l_5_frames_NPS_end_to_end_skip_0/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "gt_format": "tvd-pkl-gt",
+      "frame_manifest": "papers/TransVisDrone/runs/val/NPS/image_size_1280_temporal_YOLO5l_5_frames_NPS_end_to_end_skip_0/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "frame_manifest_format": "tvd-pkl-gt",
+      "pred": "papers/TransVisDrone/runs/val/NPS/image_size_1280_temporal_YOLO5l_5_frames_NPS_end_to_end_skip_0/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "pred_format": "tvd-pkl-pred"
+    },
+    {
+      "name": "transvisdrone_pkl_nps_best_coco",
+      "method": "TransVisDrone",
+      "gt": "papers/TransVisDrone/runs/val/NPS/image_size_1280_temporal_YOLO5l_5_frames_NPS_end_to_end_skip_0/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "gt_format": "tvd-pkl-gt",
+      "frame_manifest": "papers/TransVisDrone/runs/val/NPS/image_size_1280_temporal_YOLO5l_5_frames_NPS_end_to_end_skip_0/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "frame_manifest_format": "tvd-pkl-gt",
+      "pred": "papers/TransVisDrone/runs/val/NPS/image_size_1280_temporal_YOLO5l_5_frames_NPS_end_to_end_skip_0/best_coco/best_predictions.pkl",
+      "pred_format": "tvd-pkl-pred"
+    },
+    {
+      "name": "transvisdrone_pkl_nps_speedtest",
+      "method": "TransVisDrone",
+      "gt": "papers/TransVisDrone/runs/val/NPS/image_size_1280_temporal_YOLO5l_5_frames_NPS_end_to_end_skip_0/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "gt_format": "tvd-pkl-gt",
+      "frame_manifest": "papers/TransVisDrone/runs/val/NPS/image_size_1280_temporal_YOLO5l_5_frames_NPS_end_to_end_skip_0/best_augment_full_save/predictionsgt/predictionsgt_split_0.pkl",
+      "frame_manifest_format": "tvd-pkl-gt",
+      "pred": "papers/TransVisDrone/runs/val/NPS/image_size_1280_temporal_YOLO5l_5_frames_NPS_end_to_end_skip_0/speedtest/last_predictions.pkl",
+      "pred_format": "tvd-pkl-pred"
+    },
+    {
+      "name": "esod_visdrone_val",
+      "method": "ESOD",
+      "gt": "datasets/VisDrone/VisDrone2019-DET-val/labels",
+      "gt_format": "yolo-dir",
+      "frame_manifest": "datasets/VisDrone/VisDrone2019-DET-val/images",
+      "frame_manifest_format": "image-dir",
+      "pred": "runs/window_accuracy/papers/esod_visdrone_val/eval/esod_visdrone_val/labels",
+      "pred_format": "yolo-dir"
+    },
+    {
+      "name": "esod_official_test",
+      "method": "ESOD",
+      "gt": "runs/window_accuracy/yolomg_test_images_dataset/labels",
+      "gt_format": "yolo-dir",
+      "frame_manifest": "runs/window_accuracy/yolomg_test_images_dataset/images",
+      "frame_manifest_format": "image-dir",
+      "pred": "runs/window_accuracy/esod_test_images_eval/eval/official_test/labels",
+      "pred_format": "yolo-dir"
+    },
+    {
+      "name": "aicrowd_winner_nps_val",
+      "method": "AICrowd_Winner_v022",
+      "gt": "datasets/TransVisDrone/NPS/NPSvisdroneStyle/val/labels",
+      "gt_format": "yolo-dir",
+      "gt_frame_offset": 1,
+      "frame_manifest": "datasets/TransVisDrone/NPS/AllFrames/val",
+      "frame_manifest_format": "image-dir",
+      "pred": "papers/AICrowd_AOT_Challenge_Winner/runs/submission-v022/results_nps_val/nps_val",
+      "pred_format": "aot-json",
+      "img_width": 1280,
+      "img_height": 960
+    },
+    {
+      "name": "aicrowd_winner_aot_part1",
+      "method": "AICrowd_Winner_v022",
+      "gt": "D:/URAP_datasets/AOT/part1/ImageSets/groundtruth.json",
+      "gt_format": "aot-gt-json",
+      "frame_manifest": "D:/URAP_datasets/AOT/part1/Images",
+      "frame_manifest_format": "image-dir",
+      "pred": "papers/AICrowd_AOT_Challenge_Winner/runs/submission-v022/results_aot_part1/part1",
+      "pred_format": "aot-json",
+      "fps": 10
+    },
+    {
+      "name": "edtc_antiuav600",
+      "method": "EDTC",
+      "gt": "datasets/AntiUAV600/validation",
+      "gt_format": "antiuav-json",
+      "frame_manifest": "datasets/AntiUAV600/validation",
+      "frame_manifest_format": "antiuav-json",
+      "pred": "runs/window_accuracy/papers/edtc_antiuav600/tracking_results/uavtrack_eh/urap_window_accuracy",
+      "pred_format": "xywh-file",
+      "score_threshold": 0.0
+    },
+    {
+      "name": "edtc_official_val",
+      "method": "EDTC",
+      "gt": "runs/window_accuracy/yolomg_test_images_dataset/labels",
+      "gt_format": "yolo-dir",
+      "frame_manifest": "runs/window_accuracy/yolomg_test_images_dataset/images",
+      "frame_manifest_format": "image-dir",
+      "pred": "runs/window_accuracy/edtc_yolo_test_images_eval/eval/official_val/labels",
+      "pred_format": "yolo-dir",
+      "score_threshold": 0.001
+    },
+    {
+      "name": "li_tetc_video_14",
+      "method": "Li_TETC_NPS",
+      "gt": "papers/Fast-and-Robust-UAV-to-UAV-Detection-and-Tracking/Data/Annotation_update_180925/Video_14_gt.txt",
+      "gt_format": "li-tetc-txt",
+      "frame_manifest": "papers/Fast-and-Robust-UAV-to-UAV-Detection-and-Tracking/Data/Annotation_update_180925/Video_14_gt.txt",
+      "frame_manifest_format": "li-tetc-txt",
+      "pred": "papers/Fast-and-Robust-UAV-to-UAV-Detection-and-Tracking/Experiment_Results/Final/txt/14_dt.txt",
+      "pred_format": "li-tetc-txt",
+      "fps": 29
+    },
+    {
+      "name": "li_tetc_video_40",
+      "method": "Li_TETC_NPS",
+      "gt": "papers/Fast-and-Robust-UAV-to-UAV-Detection-and-Tracking/Data/Annotation_update_180925/Video_40_gt.txt",
+      "gt_format": "li-tetc-txt",
+      "frame_manifest": "papers/Fast-and-Robust-UAV-to-UAV-Detection-and-Tracking/Data/Annotation_update_180925/Video_40_gt.txt",
+      "frame_manifest_format": "li-tetc-txt",
+      "pred": "papers/Fast-and-Robust-UAV-to-UAV-Detection-and-Tracking/Experiment_Results/Final/txt/40_dt.txt",
+      "pred_format": "li-tetc-txt",
+      "fps": 29.8
+    }
+  ]
+}

@@ -32,7 +32,8 @@ $done = $dirs | Where-Object { Test-Path (Join-Path $_.FullName 'result.json') }
 $latest = $done | Sort-Object LastWriteTime -Descending | Select-Object -First 5 Name,LastWriteTime
 
 Write-Host "== Progress =="
-Write-Host ("done={0}/{1} total_dirs={2}" -f $done.Count, $Total, $dirs.Count)
+Write-Host ("done/total: {0}/{1}" -f $done.Count, $Total)
+Write-Host ("total_dirs: {0}" -f $dirs.Count)
 if ($latest) { $latest | Format-Table -AutoSize }
 
 Write-Host "== Process =="
@@ -51,6 +52,17 @@ if (Test-Path $pidFile) {
   }
 }
 Write-Host $procLine
+if ($done.Count -gt 0) {
+  $latestResult = $done | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  $latestResultFile = Join-Path $latestResult.FullName "result.json"
+  if (Test-Path -Path $latestResultFile -PathType Leaf) {
+    $latestItem = Get-Item $latestResultFile
+    Write-Host ("last_output_timestamp: {0}" -f $latestItem.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"))
+    Write-Host ("last_output_path: {0}" -f $latestItem.FullName)
+  }
+} else {
+  Write-Host "last_output_timestamp: none"
+}
 
 if ($stderrPath -and (Test-Path -Path $stderrPath -PathType Leaf)) {
   Write-Host "== Log Tail (stderr) =="
@@ -63,4 +75,10 @@ if ($stderrPath -and (Test-Path -Path $stderrPath -PathType Leaf)) {
   } catch {
     Write-Host ("failed_to_tail_stderr: {0}" -f $_.Exception.Message)
   }
+}
+
+$gpuLine = (& nvidia-smi --query-gpu=timestamp,utilization.gpu,utilization.memory,memory.used,power.draw --format=csv,noheader,nounits 2>$null | Select-Object -First 1)
+if ($LASTEXITCODE -eq 0 -and $gpuLine) {
+  Write-Host "== GPU =="
+  Write-Host ("gpu_signal: {0}" -f $gpuLine)
 }

@@ -94,5 +94,12 @@ $p.Id | Set-Content -Encoding ascii -Path $pidFile
   ("remaining_at_start={0}" -f $remaining.Count)
 ) | Set-Content -Encoding ascii -Path $metaFile
 
-Write-Host "Started detached runner."
-Get-Content $metaFile
+Write-Host "RUNNING"
+Write-Host ("done/total: {0}/{1}" -f $done.Keys.Count, $ids.Count)
+Write-Host ("pid: {0}" -f $p.Id)
+Write-Host ("start_time: {0}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
+Write-Host "last_completed_unit: launched AICrowd winner AOT runner"
+Write-Host ("stdout: {0}" -f $stdout)
+Write-Host ("stderr: {0}" -f $stderr)
+Write-Host ("output_root: {0}" -f $OutputRoot)
+Write-Host ("run_output: {0}" -f $runOut)

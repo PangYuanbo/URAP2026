@@ -1,0 +1,7 @@
+path: datasets/AntiUAV600/validation
+train: .
+val: .
+test: .
+nc: 1
+names:
+  - drone

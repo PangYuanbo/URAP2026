@@ -69,6 +69,32 @@ Useful entry points:
 - `doc/qstr_sanity_static_fast_tests_2026_05_20.md`
 - `doc/qstr_real_video_data_protocol.md`
 - `doc/official_datasets_and_metrics.md`
+- `doc/per_video_window_accuracy_curves.md`
+- `doc/paper_window_accuracy_status_2026_05_22.md`
+- `data_templates/paper_window_accuracy_runs.example.json`
+- `tools/pull_paper_repos.py`
+- `tools/inventory_external_window_accuracy_sources.py`
+- `tools/download_nps_videos.py`
+- `tools/inventory_aicrowd_lfs_weights.py`
+- `tools/download_aicrowd_lfs_weights.py`
+- `tools/build_yolomg_test_images_dataset.py`
+- `tools/build_paper_window_accuracy_smoke.py`
+- `tools/prepare_visdrone_yolo.py`
+- `tools/audit_paper_window_accuracy_readiness.py`
+- `tools/audit_paper_window_accuracy_goal.py`
+- `tools/write_paper_window_accuracy_gap_report.py`
+- `tools/run_paper_window_accuracy_pipeline.py`
+- `tools/discover_paper_window_accuracy_runs.py`
+- `tools/build_window_accuracy_dashboard.py`
+- `tools/prepare_aicrowd_nps_flight_dirs.py`
+- `tools/run_edtc_tracker_window_accuracy.py`
+- `tools/start_edtc_tracker_window_accuracy_detached.ps1`
+- `tools/monitor_edtc_tracker_window_accuracy.ps1`
+- `tools/run_yolo_eval_window_accuracy.py`
+- `tools/start_yolo_eval_window_accuracy_detached.ps1`
+- `tools/monitor_yolo_eval_window_accuracy.ps1`
+- `tools/start_winner_v022_nps_val_detached.ps1`
+- `tools/monitor_winner_v022_nps_val.ps1`
 - `doc/progress_report_for_professor.md`
 
 Older ESOD / TransVisDrone / YOLOMG reproduction notes remain in `doc/` and `tools/` for baseline comparison.

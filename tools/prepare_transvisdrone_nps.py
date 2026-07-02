@@ -2,7 +2,6 @@ import argparse
 import glob
 import os
 import pickle
-import re
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
@@ -73,13 +72,36 @@ def bboxes_to_yolo_lines(
     return lines
 
 
-def extract_frames_png(
+def parse_clip_ids(value: str | None) -> set[int] | None:
+    if not value:
+        return None
+    clip_ids: set[int] = set()
+    for raw_part in value.split(","):
+        part = raw_part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_s, end_s = part.split("-", 1)
+            start, end = int(start_s), int(end_s)
+            if end < start:
+                raise ValueError(f"Bad clip range: {part}")
+            clip_ids.update(range(start, end + 1))
+        else:
+            clip_ids.add(int(part))
+    for clip_id in sorted(clip_ids):
+        clip_to_split(clip_id)
+    return clip_ids
+
+
+def extract_frames(
     video_path: str,
     out_dir: str,
     clip_id: int,
+    image_ext: str,
     png_compression: int,
+    jpg_quality: int,
 ) -> Tuple[int, Tuple[int, int]]:
-    """Extract all frames to out_dir as Clip_{id}_{frame:05}.png.
+    """Extract all frames to out_dir as Clip_{id}_{frame:05}.{image_ext}.
 
     Frame numbering starts at 1 to match TransVisDrone's NPS label mapping
     (labels are indexed from 0, images from 1).
@@ -94,7 +116,10 @@ def extract_frames_png(
     img_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     img_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    pattern = os.path.join(out_dir, f"Clip_{clip_id}_*.png")
+    ext = image_ext.lower().lstrip(".")
+    if ext not in {"png", "jpg", "jpeg"}:
+        raise ValueError(f"Unsupported image extension: {image_ext}")
+    pattern = os.path.join(out_dir, f"Clip_{clip_id}_*.{ext}")
     existing = glob.glob(pattern)
     if len(existing) == n_frames:
         cap.release()
@@ -119,12 +144,17 @@ def extract_frames_png(
         ok, frame = cap.read()
         if not ok:
             break
-        out_path = os.path.join(out_dir, f"Clip_{clip_id}_{idx:05d}.png")
+        out_path = os.path.join(out_dir, f"Clip_{clip_id}_{idx:05d}.{ext}")
         if not os.path.exists(out_path):
+            write_params = (
+                [cv2.IMWRITE_PNG_COMPRESSION, int(png_compression)]
+                if ext == "png"
+                else [cv2.IMWRITE_JPEG_QUALITY, int(jpg_quality)]
+            )
             ok_write = cv2.imwrite(
                 out_path,
                 frame,
-                [cv2.IMWRITE_PNG_COMPRESSION, int(png_compression)],
+                write_params,
             )
             if not ok_write:
                 cap.release()
@@ -232,10 +262,27 @@ def main() -> None:
         help="OpenCV PNG compression level [0..9]. Higher is smaller but slower.",
     )
     ap.add_argument(
+        "--image-ext",
+        choices=["png", "jpg", "jpeg"],
+        default="png",
+        help="Frame image extension. Use jpg/jpeg for lower disk use on local NPS subsets.",
+    )
+    ap.add_argument(
+        "--jpg-quality",
+        type=int,
+        default=90,
+        help="OpenCV JPEG quality [0..100] when --image-ext is jpg/jpeg.",
+    )
+    ap.add_argument(
         "--only-split",
         choices=["train", "val", "test"],
         default=None,
         help="If set, only process the given split.",
+    )
+    ap.add_argument(
+        "--only-clips",
+        default=None,
+        help="Optional clip ids/ranges such as '37-40,45'. Applied after --only-split.",
     )
     args = ap.parse_args()
 
@@ -249,8 +296,12 @@ def main() -> None:
 
     split_to_lens: Dict[str, Dict[int, int]] = {"train": {}, "val": {}, "test": {}}
 
+    only_clips = parse_clip_ids(args.only_clips)
     splits = [s for s in SPLITS if args.only_split in (None, s.name)]
     for split in splits:
+        clip_ids = [clip_id for clip_id in split.clip_ids if only_clips is None or clip_id in only_clips]
+        if not clip_ids:
+            continue
         frames_dir = os.path.join(allframes_root, split.name)
         labels_dir = os.path.join(labels_root, split.name, "labels")
         vids_dir = os.path.join(videos_root, split.name)
@@ -258,17 +309,19 @@ def main() -> None:
         ensure_dir(labels_dir)
         ensure_dir(vids_dir)
 
-        for clip_id in split.clip_ids:
+        for clip_id in clip_ids:
             video_path = os.path.join(videos_dir, f"Clip_{clip_id}.mov")
             if not os.path.exists(video_path):
                 raise RuntimeError(f"Missing video file: {video_path}")
 
             # Extract frames.
-            n_frames, (img_w, img_h) = extract_frames_png(
+            n_frames, (img_w, img_h) = extract_frames(
                 video_path=video_path,
                 out_dir=frames_dir,
                 clip_id=clip_id,
+                image_ext=args.image_ext,
                 png_compression=args.png_compression,
+                jpg_quality=args.jpg_quality,
             )
             split_to_lens[split.name][clip_id] = int(n_frames)
 
@@ -295,4 +348,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
