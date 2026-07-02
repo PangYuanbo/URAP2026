@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What We Add on Top of YOLOMG / TransVisDrone — the VATD Module</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#2c2823; --paper:#faf6ee; --paper2:#f3ede1;
+    --muted:#6f685c; --rule:#ded5c4; --accent:#0f6e56; --accent2:#9a4a1f;
+    --color-text-secondary:#6f685c;
+    --color-surface-secondary:#f1ece1;
+    --color-border-secondary:#d9d2c4;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans",sans-serif; line-height:1.7;
+    font-size:16px;
+  }
+  .wrap{max-width:880px; margin:0 auto; padding:0 22px 120px}
+  header.cover{
+    padding:72px 22px 40px; max-width:880px; margin:0 auto;
+    border-bottom:2px solid var(--ink);
+  }
+  .kicker{font-family:"IBM Plex Mono",monospace; font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); margin:0 0 14px}
+  h1{font-family:"Fraunces",serif; font-weight:600; font-size:clamp(34px,6vw,52px); line-height:1.06; margin:0 0 16px; letter-spacing:-.01em}
+  .sub{color:var(--muted); font-size:17px; max-width:640px; margin:0}
+  .toc{margin:34px auto 0; max-width:880px; padding:22px; background:var(--paper2); border:1px solid var(--rule); border-radius:14px}
+  .toc h2{font-family:"IBM Plex Mono",monospace; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:0 0 12px}
+  .toc ol{margin:0; padding-left:20px; columns:2; column-gap:30px}
+  .toc li{margin:5px 0; break-inside:avoid}
+  .toc a{color:var(--ink); text-decoration:none; border-bottom:1px solid transparent}
+  .toc a:hover{border-bottom-color:var(--accent)}
+  h2.part{font-family:"Fraunces",serif; font-weight:600; font-size:30px; margin:64px 0 6px; padding-top:22px; border-top:2px solid var(--ink); letter-spacing:-.01em}
+  h2.part .pn{font-family:"IBM Plex Mono",monospace; font-size:14px; color:var(--accent); display:block; letter-spacing:.1em; margin-bottom:4px}
+  h3{font-family:"Fraunces",serif; font-weight:600; font-size:21px; margin:38px 0 8px; color:var(--ink)}
+  p{margin:12px 0}
+  strong{font-weight:600}
+  .term{font-family:"IBM Plex Mono",monospace; font-size:.9em; background:var(--paper2); padding:1px 5px; border-radius:4px; border:1px solid var(--rule)}
+  figure{margin:22px 0; padding:16px 16px 10px; background:#fffdf8; border:1px solid var(--rule); border-radius:14px; box-shadow:0 1px 0 rgba(0,0,0,.03)}
+  figure svg{display:block; width:100%; height:auto}
+  figcaption{font-size:13px; color:var(--muted); margin-top:8px; font-family:"IBM Plex Mono",monospace; letter-spacing:.02em}
+  .key{margin:16px 0; padding:14px 18px; border-left:4px solid var(--accent); background:var(--paper2); border-radius:0 10px 10px 0}
+  .key b{font-family:"Fraunces",serif}
+  .th{font-family:"IBM Plex Sans",sans-serif; font-weight:600; font-size:13px}
+  .ts{font-family:"IBM Plex Sans",sans-serif; font-size:12px}
+  .box{fill:#fffdf8; stroke:var(--color-border-secondary)}
+  .arr{fill:none; stroke:#9c9485; stroke-width:1.5}
+  .c-teal rect,.c-teal circle{fill:#e3f2ea; stroke:#1d9e75}
+  .c-amber rect,.c-amber circle{fill:#faf0db; stroke:#ba7517}
+  .c-purple rect,.c-purple circle{fill:#ebe8f6; stroke:#6b5fd6}
+  .c-coral rect,.c-coral circle{fill:#fbe8e3; stroke:#c0533f}
+  .c-green rect,.c-green circle{fill:#eaf2df; stroke:#5b921f}
+  .c-gray rect,.c-gray circle{fill:#efeee9; stroke:#a8a6a0}
+  .hl{fill:none; stroke:#ba7517; stroke-width:1.6; stroke-dasharray:5 4}
+</style>
+</head>
+<body>
+
+<header class="cover">
+  <p class="kicker">Architecture Note · URAP 2026</p>
+  <h1>What we add on top of<br>YOLOMG / TransVisDrone</h1>
+  <p class="sub">We keep the existing detector and add one module: a language-free <strong>Vision-Action transformer (VATD)</strong> that scores how UAV-like a candidate's motion is, then soft-rescores the detector's output. This note covers where it sits, what it reads, and what it outputs.</p>
+</header>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#p1">Where the module sits</a></li>
+    <li><a href="#p1b">Linking boxes into tracklets</a></li>
+    <li><a href="#p2">Difference from TransVisDrone</a></li>
+    <li><a href="#p3">What an action chunk is</a></li>
+    <li><a href="#p4">Inside the VATD module</a></li>
+    <li><a href="#p5">Soft rescore, not hard filter</a></li>
+    <li><a href="#p6">The latest piece: ego-adaptive</a></li>
+  </ol>
+</nav>
+
+<main class="wrap">
+
+<!-- ============ PART 1 ============ -->
+<h2 class="part" id="p1"><span class="pn">PART 1</span>Where the module sits</h2>
+<p>The base detector is left <strong>untouched</strong>. We run YOLOMG or TransVisDrone at a <strong>low threshold</strong> so that weak candidates — the few-pixel ones usually discarded — survive. On top of those proposals we add a chain: link weak detections into short <strong>tracklets</strong>, pass each tracklet through the <strong>VATD video/action transformer</strong>, and use its output to <strong>softly rescore</strong> the per-frame detections. The base detector keeps its job; we only add a motion-aware second opinion.</p>
+
+<figure>
+<svg width="100%" viewBox="0 0 680 290" role="img" aria-label="Where the VATD module sits in the pipeline">
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<text class="th" x="40" y="34">① TransVisDrone (baseline)</text>
+<g class="c-gray"><rect x="40" y="48" width="128" height="42" rx="8" stroke-width="0.5"/><text class="ts" x="104" y="69" text-anchor="middle" dominant-baseline="central">video frames</text></g>
+<line x1="169" y1="69" x2="205" y2="69" class="arr" marker-end="url(#a1)"/>
+<g class="c-coral"><rect x="207" y="48" width="170" height="42" rx="8" stroke-width="0.5"/><text class="ts" x="292" y="69" text-anchor="middle" dominant-baseline="central">temporal detector</text></g>
+<line x1="378" y1="69" x2="414" y2="69" class="arr" marker-end="url(#a1)"/>
+<g class="c-purple"><rect x="416" y="48" width="120" height="42" rx="8" stroke-width="0.5"/><text class="ts" x="476" y="69" text-anchor="middle" dominant-baseline="central">detections</text></g>
+
+<line x1="40" y1="112" x2="640" y2="112" stroke="#888780" stroke-width="0.8" stroke-dasharray="4 4"/>
+<text class="th" x="40" y="138">② Ours (same detector + one added module)</text>
+
+<g class="c-gray"><rect x="18" y="156" width="92" height="50" rx="8" stroke-width="0.5"/><text class="ts" x="64" y="174" text-anchor="middle" dominant-baseline="central">video</text><text class="ts" x="64" y="190" text-anchor="middle" dominant-baseline="central">frames</text></g>
+<line x1="111" y1="181" x2="129" y2="181" class="arr" marker-end="url(#a1)"/>
+<g class="c-gray"><rect x="131" y="156" width="104" height="50" rx="8" stroke-width="0.5"/><text class="ts" x="183" y="174" text-anchor="middle" dominant-baseline="central">low-threshold</text><text class="ts" x="183" y="190" text-anchor="middle" dominant-baseline="central">proposals</text></g>
+<line x1="236" y1="181" x2="252" y2="181" class="arr" marker-end="url(#a1)"/>
+<g class="c-teal"><rect x="254" y="156" width="84" height="50" rx="8" stroke-width="0.5"/><text class="ts" x="296" y="181" text-anchor="middle" dominant-baseline="central">tracklets</text></g>
+<line x1="339" y1="181" x2="355" y2="181" class="arr" marker-end="url(#a1)"/>
+<g class="c-amber"><rect x="357" y="156" width="120" height="50" rx="8" stroke-width="0.5"/><text class="th" x="417" y="174" text-anchor="middle" dominant-baseline="central">VATD</text><text class="ts" x="417" y="191" text-anchor="middle" dominant-baseline="central">video/action transf.</text></g>
+<line x1="478" y1="181" x2="494" y2="181" class="arr" marker-end="url(#a1)"/>
+<g class="c-green"><rect x="496" y="156" width="78" height="50" rx="8" stroke-width="0.5"/><text class="ts" x="535" y="174" text-anchor="middle" dominant-baseline="central">soft</text><text class="ts" x="535" y="190" text-anchor="middle" dominant-baseline="central">rescore</text></g>
+<line x1="575" y1="181" x2="591" y2="181" class="arr" marker-end="url(#a1)"/>
+<g class="c-purple"><rect x="593" y="156" width="70" height="50" rx="8" stroke-width="0.5"/><text class="ts" x="628" y="181" text-anchor="middle" dominant-baseline="central">final det.</text></g>
+
+<rect class="hl" x="350" y="149" width="134" height="64" rx="12"/>
+<text class="ts" x="417" y="232" text-anchor="middle" fill="#854F0B">the only thing we add</text>
+<text class="ts" x="183" y="232" text-anchor="middle" fill="#5F5E5A">base detector, unchanged</text>
+<path d="M183 218 L183 209" class="arr" marker-end="url(#a1)"/>
+</svg>
+<figcaption>Fig 1 · Base detector unchanged; VATD added after the proposals</figcaption>
+</figure>
+
+<p>This is not a new detector. It is <strong>TransVisDrone / YOLOMG proposals + an action model + soft fusion</strong> — action-conditioned track-before-detect rescoring on top of existing proposals.</p>
+
+<!-- ============ PART 1.5 ============ -->
+<h2 class="part" id="p1b"><span class="pn">PART 2</span>Linking boxes into tracklets</h2>
+<p>A low threshold returns many weak boxes per frame: a few are the drone, most are background clutter (specks, edges, compression artifacts). We link boxes that move coherently across frames into a <strong>tracklet</strong>, then judge each tracklet by its <strong>trajectory</strong> instead of any single frame. Plotting the box centres over frames looks like this.</p>
+
+<figure>
+<svg width="100%" viewBox="0 0 680 430" role="img" aria-label="Top-down view of low-threshold boxes linked into tracklets">
+<text class="th" x="348" y="24" text-anchor="middle">Top-Down view · low-threshold boxes → linked tracklets</text>
+<!-- plot frame -->
+<rect x="70" y="40" width="556" height="340" fill="#ffffff" stroke="#b8b1a2" stroke-width="1"/>
+<!-- grid -->
+<g stroke="#e6e1d4" stroke-width="1">
+<line x1="139" y1="40" x2="139" y2="380"/><line x1="209" y1="40" x2="209" y2="380"/><line x1="278" y1="40" x2="278" y2="380"/><line x1="348" y1="40" x2="348" y2="380"/><line x1="417" y1="40" x2="417" y2="380"/><line x1="487" y1="40" x2="487" y2="380"/><line x1="556" y1="40" x2="556" y2="380"/>
+<line x1="70" y1="97" x2="626" y2="97"/><line x1="70" y1="153" x2="626" y2="153"/><line x1="70" y1="210" x2="626" y2="210"/><line x1="70" y1="267" x2="626" y2="267"/><line x1="70" y1="323" x2="626" y2="323"/>
+</g>
+<!-- ticks -->
+<g class="ts" fill="#5F5E5A">
+<text x="139" y="396" text-anchor="middle">0</text><text x="278" y="396" text-anchor="middle">5</text><text x="417" y="396" text-anchor="middle">10</text><text x="556" y="396" text-anchor="middle">15</text>
+<text x="60" y="101" text-anchor="end">5</text><text x="60" y="214" text-anchor="end">0</text><text x="60" y="327" text-anchor="end">-5</text>
+</g>
+<text class="ts" x="28" y="214" text-anchor="middle" transform="rotate(-90 28 214)" fill="#5F5E5A">Y (image plane)</text>
+<text class="ts" x="348" y="414" text-anchor="middle" fill="#5F5E5A">X (image plane, over frames →)</text>
+
+<!-- weak candidate boxes (clutter) -->
+<g fill="#efeee9" stroke="#a8a6a0" stroke-width="1">
+<rect x="108" y="333" width="14" height="14" rx="2"/><rect x="173" y="143" width="14" height="14" rx="2"/><rect x="248" y="338" width="14" height="14" rx="2"/><rect x="293" y="98" width="14" height="14" rx="2"/><rect x="358" y="303" width="14" height="14" rx="2"/><rect x="143" y="248" width="14" height="14" rx="2"/><rect x="408" y="333" width="14" height="14" rx="2"/><rect x="338" y="193" width="14" height="14" rx="2"/><rect x="463" y="338" width="14" height="14" rx="2"/><rect x="353" y="128" width="14" height="14" rx="2"/><rect x="538" y="303" width="14" height="14" rx="2"/><rect x="218" y="128" width="14" height="14" rx="2"/><rect x="433" y="188" width="14" height="14" rx="2"/><rect x="243" y="198" width="14" height="14" rx="2"/><rect x="323" y="268" width="14" height="14" rx="2"/><rect x="538" y="353" width="14" height="14" rx="2"/><rect x="593" y="243" width="14" height="14" rx="2"/><rect x="183" y="353" width="14" height="14" rx="2"/></g>
+
+<!-- background tracklet (rejected): jitter cluster + red dashed -->
+<polyline points="300,150 314,164 299,176 318,158" fill="none" stroke="#c0533f" stroke-width="2" stroke-dasharray="5 4"/>
+<g fill="#fbe3dc" stroke="#c0533f" stroke-width="1">
+<rect x="293" y="143" width="12" height="12" rx="2"/><rect x="307" y="157" width="12" height="12" rx="2"/><rect x="292" y="169" width="12" height="12" rx="2"/><rect x="311" y="151" width="12" height="12" rx="2"/></g>
+<text class="ts" x="360" y="150" fill="#BC4938">erratic / static jitter → background</text>
+
+<!-- drone tracklet: blue line + linked boxes -->
+<polyline points="100,335 165,308 238,272 315,250 400,256 478,222 556,202" fill="none" stroke="#3b76d6" stroke-width="2.4"/>
+<g fill="#d9ecfb" stroke="#3b76d6" stroke-width="1.4">
+<rect x="158" y="301" width="14" height="14" rx="2"/><rect x="231" y="265" width="14" height="14" rx="2"/><rect x="308" y="243" width="14" height="14" rx="2"/><rect x="393" y="249" width="14" height="14" rx="2"/><rect x="471" y="215" width="14" height="14" rx="2"/><rect x="549" y="195" width="14" height="14" rx="2"/></g>
+<circle cx="100" cy="335" r="6" fill="#1d9e75" stroke="#0f6e56" stroke-width="1"/>
+<text class="ts" x="250" y="356" fill="#2f5fb0">coherent UAV-like motion → one tracklet</text>
+
+<!-- legend -->
+<rect x="468" y="50" width="156" height="84" fill="#fffdf8" stroke="#d9d2c4" stroke-width="1" rx="6"/>
+<line x1="480" y1="68" x2="506" y2="68" stroke="#3b76d6" stroke-width="2.4"/><text class="ts" x="512" y="72" fill="#3d362c">drone tracklet</text>
+<line x1="480" y1="92" x2="506" y2="92" stroke="#c0533f" stroke-width="2" stroke-dasharray="5 4"/><text class="ts" x="512" y="96" fill="#3d362c">background tracklet</text>
+<rect x="486" y="109" width="13" height="13" rx="2" fill="#efeee9" stroke="#a8a6a0"/><text class="ts" x="512" y="120" fill="#3d362c">weak candidate</text>
+</svg>
+<figcaption>Fig 2a · Low-threshold boxes (grey); a coherent chain becomes a drone tracklet (blue)</figcaption>
+</figure>
+
+<p>Each tracklet is passed to the model as a trajectory. A smooth path scores high; a jittery cluster or static speck scores low. The output is a soft score, so a weak but coherent drone path is kept, not deleted.</p>
+
+<figure>
+<svg width="100%" viewBox="0 0 680 250" role="img" aria-label="Model judges each tracklet by its trajectory">
+<defs><marker id="b2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<!-- input A: smooth track -->
+<rect x="34" y="36" width="160" height="74" fill="#ffffff" stroke="#b8b1a2"/>
+<g stroke="#ece7da" stroke-width="1"><line x1="74" y1="36" x2="74" y2="110"/><line x1="114" y1="36" x2="114" y2="110"/><line x1="154" y1="36" x2="154" y2="110"/><line x1="34" y1="73" x2="194" y2="73"/></g>
+<polyline points="46,98 78,86 110,72 142,64 180,52" fill="none" stroke="#3b76d6" stroke-width="2.4"/>
+<circle cx="46" cy="98" r="4" fill="#1d9e75"/>
+<text class="ts" x="114" y="128" text-anchor="middle" fill="#2f5fb0">smooth, coherent path</text>
+
+<!-- input B: jitter -->
+<rect x="34" y="150" width="160" height="74" fill="#ffffff" stroke="#b8b1a2"/>
+<g stroke="#ece7da" stroke-width="1"><line x1="74" y1="150" x2="74" y2="224"/><line x1="114" y1="150" x2="114" y2="224"/><line x1="154" y1="150" x2="154" y2="224"/><line x1="34" y1="187" x2="194" y2="187"/></g>
+<polyline points="92,164 108,200 96,176 120,206 104,170" fill="none" stroke="#c0533f" stroke-width="2.2" stroke-dasharray="4 3"/>
+<text class="ts" x="114" y="242" text-anchor="middle" fill="#BC4938">jitter / static speck</text>
+
+<!-- VATD -->
+<line x1="196" y1="73" x2="266" y2="118" class="arr" marker-end="url(#b2)"/>
+<line x1="196" y1="187" x2="266" y2="142" class="arr" marker-end="url(#b2)"/>
+<g class="c-amber"><rect x="268" y="100" width="146" height="60" rx="8" stroke-width="0.5"/><text class="th" x="341" y="124" text-anchor="middle" dominant-baseline="central">VATD</text><text class="ts" x="341" y="142" text-anchor="middle" dominant-baseline="central">motion-action head</text></g>
+
+<!-- verdicts -->
+<line x1="415" y1="118" x2="468" y2="78" class="arr" marker-end="url(#b2)"/>
+<line x1="415" y1="142" x2="468" y2="182" class="arr" marker-end="url(#b2)"/>
+<g class="c-green"><rect x="470" y="52" width="186" height="52" rx="8" stroke-width="0.5"/><text class="th" x="563" y="70" text-anchor="middle" dominant-baseline="central">drone ✓</text><text class="ts" x="563" y="88" text-anchor="middle" dominant-baseline="central">motion-action score ↑</text></g>
+<g class="c-coral"><rect x="470" y="156" width="186" height="52" rx="8" stroke-width="0.5"/><text class="th" x="563" y="174" text-anchor="middle" dominant-baseline="central">background ✗</text><text class="ts" x="563" y="192" text-anchor="middle" dominant-baseline="central">motion-action score ↓</text></g>
+</svg>
+<figcaption>Fig 2b · Each tracklet is scored as a trajectory; the output is a soft score</figcaption>
+</figure>
+
+<!-- ============ PART 3 ============ -->
+<h2 class="part" id="p2"><span class="pn">PART 3</span>Difference from TransVisDrone</h2>
+<p>TransVisDrone uses time as an image feature: it stacks frames so the detector spots the drone better. We use the trajectory instead, asking whether the box moves like a UAV across frames. Smooth UAV-like motion raises the score; erratic motion lowers it.</p>
+
+<figure>
+<svg width="100%" viewBox="0 0 680 226" role="img" aria-label="Temporal as detection feature vs temporal as dynamics">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<text class="th" x="40" y="34">TransVisDrone</text>
+<g class="c-gray"><rect x="40" y="48" width="120" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="100" y="68" text-anchor="middle" dominant-baseline="central">stacked frames</text></g>
+<line x1="161" y1="68" x2="197" y2="68" class="arr" marker-end="url(#a2)"/>
+<g class="c-coral"><rect x="199" y="48" width="150" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="274" y="68" text-anchor="middle" dominant-baseline="central">detect better in 1 frame</text></g>
+<text class="ts" x="40" y="112" fill="#5F5E5A">time = an extra image feature for the detector</text>
+
+<line x1="40" y1="130" x2="640" y2="130" stroke="#888780" stroke-width="0.8" stroke-dasharray="4 4"/>
+
+<text class="th" x="40" y="158" fill="#0F6E56">Ours (VATD)</text>
+<g class="c-teal"><rect x="40" y="170" width="140" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="110" y="190" text-anchor="middle" dominant-baseline="central">box trajectory</text></g>
+<line x1="181" y1="190" x2="217" y2="190" class="arr" marker-end="url(#a2)"/>
+<g class="c-amber"><rect x="219" y="170" width="200" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="319" y="190" text-anchor="middle" dominant-baseline="central">"does it move like a UAV?"</text></g>
+<line x1="420" y1="190" x2="456" y2="190" class="arr" marker-end="url(#a2)"/>
+<g class="c-green"><rect x="458" y="170" width="180" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="548" y="190" text-anchor="middle" dominant-baseline="central">motion-consistency score</text></g>
+</svg>
+<figcaption>Fig 2 · Same frames, different question: image feature (TVD) vs motion / dynamics consistency (ours)</figcaption>
+</figure>
+
+<!-- ============ PART 3 ============ -->
+<h2 class="part" id="p3"><span class="pn">PART 4</span>What an action chunk is</h2>
+<p>For each tracklet we convert boxes to actions. A box is <span class="term">[cx, cy, w, h]</span>; the change between frames is one action <span class="term">[dx, dy, dlog w, dlog h]</span> (centre shift + log size-ratio). From the past <strong>N</strong> boxes the module predicts the next <strong>H</strong> actions — that sequence is the <strong>action chunk</strong>. The action is the box's own near-future motion, not a robot command.</p>
+
+<figure>
+<svg width="100%" viewBox="0 0 680 224" role="img" aria-label="Action chunk: past boxes to future actions">
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<text class="ts" x="40" y="30" fill="#5F5E5A">past N boxes (observed)</text>
+<g class="c-gray">
+<rect x="40" y="42" width="40" height="34" rx="6" stroke-width="0.5"/><rect x="86" y="42" width="40" height="34" rx="6" stroke-width="0.5"/><rect x="132" y="42" width="40" height="34" rx="6" stroke-width="0.5"/><rect x="178" y="42" width="40" height="34" rx="6" stroke-width="0.5"/>
+</g>
+<text class="ts" x="129" y="64" text-anchor="middle" fill="#5F5E5A">… boxes …</text>
+<text class="ts" x="430" y="30" fill="#0F6E56">future H actions (predicted) = the chunk</text>
+<g class="c-teal">
+<rect x="300" y="42" width="56" height="34" rx="6" stroke-width="0.5"/><rect x="362" y="42" width="56" height="34" rx="6" stroke-width="0.5"/><rect x="424" y="42" width="56" height="34" rx="6" stroke-width="0.5"/>
+</g>
+<text class="ts" x="390" y="64" text-anchor="middle" fill="#0F6E56">a₁ a₂ a₃</text>
+<line x1="220" y1="59" x2="296" y2="59" class="arr" marker-end="url(#a3)"/>
+<text class="ts" x="258" y="50" text-anchor="middle" fill="#5F5E5A">predict</text>
+
+<g class="c-amber"><rect x="170" y="120" width="340" height="46" rx="8" stroke-width="0.5"/>
+<text class="th" x="340" y="138" text-anchor="middle" dominant-baseline="central">action = [ dx, dy, dlog w, dlog h ]</text>
+<text class="ts" x="340" y="156" text-anchor="middle" dominant-baseline="central">centre shift + log size-ratio, per frame</text></g>
+<text class="ts" x="340" y="196" text-anchor="middle" fill="#5F5E5A">target is the residual over a constant-velocity guess, so a steady CV motion is the strong baseline</text>
+</svg>
+<figcaption>Fig 3 · A box becomes an action; past N boxes → future H actions = the action chunk</figcaption>
+</figure>
+
+<!-- ============ PART 4 ============ -->
+<h2 class="part" id="p4"><span class="pn">PART 5</span>Inside the VATD module</h2>
+<p>Per tracklet the module reads three inputs: the <strong>image crops</strong> along the tube, a <strong>normalized state</strong> token (box, score, visibility), and a <strong>motion feature</strong>. A temporal transformer fuses them and two heads read out. The <strong>main head</strong> classifies drone-like motion (binary cross-entropy); its probability is the score we use. The <strong>auxiliary head</strong> regresses the future action chunk (residual over constant velocity, smooth-L1) as a dynamics prior. No language branch — it is Vision-Action.</p>
+
+<figure>
+<svg width="100%" viewBox="0 0 680 280" role="img" aria-label="Inside the VATD module">
+<defs><marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<text class="ts" x="40" y="30" fill="#5F5E5A">inputs (per tracklet)</text>
+<g class="c-gray"><rect x="40" y="44" width="150" height="38" rx="8" stroke-width="0.5"/><text class="ts" x="115" y="63" text-anchor="middle" dominant-baseline="central">image crops [T]</text></g>
+<g class="c-gray"><rect x="40" y="92" width="150" height="38" rx="8" stroke-width="0.5"/><text class="ts" x="115" y="111" text-anchor="middle" dominant-baseline="central">state [T, 6]</text></g>
+<g class="c-gray"><rect x="40" y="140" width="150" height="38" rx="8" stroke-width="0.5"/><text class="ts" x="115" y="159" text-anchor="middle" dominant-baseline="central">motion features</text></g>
+<line x1="191" y1="63" x2="247" y2="100" class="arr" marker-end="url(#a4)"/>
+<line x1="191" y1="111" x2="247" y2="111" class="arr" marker-end="url(#a4)"/>
+<line x1="191" y1="159" x2="247" y2="122" class="arr" marker-end="url(#a4)"/>
+<g class="c-coral"><rect x="249" y="78" width="130" height="66" rx="8" stroke-width="0.5"/><text class="th" x="314" y="104" text-anchor="middle" dominant-baseline="central">temporal</text><text class="ts" x="314" y="122" text-anchor="middle" dominant-baseline="central">transformer</text></g>
+
+<line x1="380" y1="98" x2="430" y2="70" class="arr" marker-end="url(#a4)"/>
+<line x1="380" y1="124" x2="430" y2="160" class="arr" marker-end="url(#a4)"/>
+
+<g class="c-teal"><rect x="432" y="48" width="218" height="46" rx="8" stroke-width="0.5"/><text class="th" x="541" y="66" text-anchor="middle" dominant-baseline="central">motion-action head · BCE</text><text class="ts" x="541" y="83" text-anchor="middle" dominant-baseline="central">"is this drone-like motion?"</text></g>
+<g class="c-purple"><rect x="432" y="142" width="218" height="46" rx="8" stroke-width="0.5"/><text class="th" x="541" y="160" text-anchor="middle" dominant-baseline="central">action-residual head · SmoothL1</text><text class="ts" x="541" y="177" text-anchor="middle" dominant-baseline="central">future chunk vs constant velocity</text></g>
+
+<line x1="541" y1="94" x2="541" y2="118" class="arr" marker-end="url(#a4)"/>
+<g class="c-green"><rect x="452" y="120" width="178" height="20" rx="6" stroke-width="0.5"/><text class="ts" x="541" y="130" text-anchor="middle" dominant-baseline="central">→ motion_action_score (used)</text></g>
+
+<text class="ts" x="314" y="170" text-anchor="middle" fill="#5F5E5A">no language branch — Vision-Action</text>
+<text class="ts" x="40" y="214" fill="#5F5E5A">main head's probability is the score we use to rescore; the residual head is only a dynamics prior</text>
+<text class="ts" x="40" y="236" fill="#5F5E5A">model: VATDMotionActionTransformer · qstr_dronedet/tracking/video_action_policy.py</text>
+</svg>
+<figcaption>Fig 4 · Crops + state + motion → temporal transformer → classification head (the score) + residual head (a prior)</figcaption>
+</figure>
+
+<!-- ============ PART 5 ============ -->
+<h2 class="part" id="p5"><span class="pn">PART 6</span>Soft rescore, not hard filter</h2>
+<p>The action model does not delete candidates. Its confidence adjusts the detector score up or down (soft fusion), so a weak but real tiny drone can still pass. Used as a <strong>hard filter</strong> it drops too many true tiny tracklets and recall collapses (<span class="term">AFDR ≈ 0.535</span>). As a <strong>soft rescorer</strong> at <span class="term">center=0.20, β=0.40</span> on the official AOT evaluator, detection rate rises (AFDR 0.86847 → 0.90859) while false alarms fall (FAR 89.48 → 83.55, FPPI 0.26232 → 0.26193) at the same encounter count (162/175).</p>
+
+<figure>
+<svg width="100%" viewBox="0 0 680 268" role="img" aria-label="Soft rescore vs hard filter">
+<defs><marker id="a5" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<text class="th" x="40" y="32" fill="#0F6E56">✓ Soft rescore (what we do)</text>
+<g class="c-gray"><rect x="40" y="46" width="120" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="100" y="66" text-anchor="middle" dominant-baseline="central">detector score</text></g>
+<text class="th" x="178" y="71" text-anchor="middle">×</text>
+<g class="c-teal"><rect x="196" y="46" width="140" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="266" y="66" text-anchor="middle" dominant-baseline="central">motion confidence</text></g>
+<line x1="337" y1="66" x2="373" y2="66" class="arr" marker-end="url(#a5)"/>
+<g class="c-green"><rect x="375" y="46" width="150" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="450" y="66" text-anchor="middle" dominant-baseline="central">adjusted score</text></g>
+<line x1="526" y1="66" x2="560" y2="66" class="arr" marker-end="url(#a5)"/>
+<g class="c-purple"><rect x="562" y="46" width="100" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="612" y="66" text-anchor="middle" dominant-baseline="central">weak TP lives</text></g>
+<text class="ts" x="40" y="108" fill="#5F5E5A">nothing is deleted — a real tiny drone keeps a chance to pass</text>
+
+<line x1="40" y1="128" x2="640" y2="128" stroke="#888780" stroke-width="0.8" stroke-dasharray="4 4"/>
+
+<text class="th" x="40" y="156" fill="#BC4938">✕ Hard filter (what we avoid)</text>
+<g class="c-gray"><rect x="40" y="170" width="120" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="100" y="190" text-anchor="middle" dominant-baseline="central">candidates</text></g>
+<line x1="161" y1="190" x2="197" y2="190" class="arr" marker-end="url(#a5)"/>
+<g class="c-amber"><rect x="199" y="170" width="130" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="264" y="190" text-anchor="middle" dominant-baseline="central">threshold gate</text></g>
+<line x1="330" y1="190" x2="366" y2="190" class="arr" marker-end="url(#a5)"/>
+<g style="opacity:.45"><g class="c-gray"><rect x="368" y="170" width="150" height="40" rx="8" stroke-width="0.5"/></g></g>
+<text class="ts" x="443" y="190" text-anchor="middle" fill="#BC4938">tiny TPs dropped</text>
+<line x1="519" y1="190" x2="555" y2="190" class="arr" marker-end="url(#a5)"/>
+<g class="c-coral"><rect x="557" y="170" width="105" height="40" rx="8" stroke-width="0.5"/><text class="ts" x="609" y="184" text-anchor="middle" dominant-baseline="central">recall collapses</text><text class="ts" x="609" y="200" text-anchor="middle" dominant-baseline="central" fill="#BC4938">AFDR ≈ 0.535</text></g>
+<text class="ts" x="40" y="232" fill="#5F5E5A">soft point center=0.20 β=0.40: AFDR 0.86847 → 0.90859, FAR 89.48 → 83.55, encounter 162/175 held</text>
+</svg>
+<figcaption>Fig 5 · Soft rescoring lifts detection rate and cuts false alarms; a hard filter would collapse recall</figcaption>
+</figure>
+
+<p>Scope: this is a verified gain on the official AOT evaluator, but it is still proposals + action model + soft fusion, not an end-to-end detector, and NPS is not yet a clean win. A gap-insert variant worsened false alarms (FAR 94.88), so the mainline is the action rescorer, not gap insertion.</p>
+
+<!-- ============ PART 7 ============ -->
+<h2 class="part" id="p6"><span class="pn">PART 7</span>Ego-adaptive variant</h2>
+<p>Heavy host-platform motion contaminates the observed action: the target may be still but the box moves with the camera. The latest module conditions on a <strong>camera-motion feature</strong> and keeps several look-back <strong>horizons</strong> (3, 5, 7 frames), each with its own heads. A <strong>router</strong> reads the ego feature and produces softmax weights to blend them — steady camera leans long, shaky camera leans short. Action supervision is also down-weighted when the camera is unstable.</p>
+
+<figure>
+<svg width="100%" viewBox="0 0 680 248" role="img" aria-label="Ego-adaptive multi-horizon router">
+<defs><marker id="a6" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<g class="c-purple"><rect x="40" y="100" width="120" height="44" rx="8" stroke-width="0.5"/><text class="ts" x="100" y="116" text-anchor="middle" dominant-baseline="central">ego / camera</text><text class="ts" x="100" y="132" text-anchor="middle" dominant-baseline="central">motion feature</text></g>
+<line x1="161" y1="122" x2="197" y2="122" class="arr" marker-end="url(#a6)"/>
+<g class="c-amber"><rect x="199" y="100" width="120" height="44" rx="8" stroke-width="0.5"/><text class="th" x="259" y="116" text-anchor="middle" dominant-baseline="central">router</text><text class="ts" x="259" y="132" text-anchor="middle" dominant-baseline="central">softmax weights</text></g>
+
+<g class="c-teal">
+<rect x="360" y="44" width="150" height="34" rx="7" stroke-width="0.5"/><text class="ts" x="435" y="61" text-anchor="middle" dominant-baseline="central">horizon 3 · heads</text>
+<rect x="360" y="105" width="150" height="34" rx="7" stroke-width="0.5"/><text class="ts" x="435" y="122" text-anchor="middle" dominant-baseline="central">horizon 5 · heads</text>
+<rect x="360" y="166" width="150" height="34" rx="7" stroke-width="0.5"/><text class="ts" x="435" y="183" text-anchor="middle" dominant-baseline="central">horizon 7 · heads</text>
+</g>
+<line x1="320" y1="116" x2="356" y2="62" class="arr" marker-end="url(#a6)"/>
+<line x1="320" y1="122" x2="356" y2="122" class="arr" marker-end="url(#a6)"/>
+<line x1="320" y1="128" x2="356" y2="182" class="arr" marker-end="url(#a6)"/>
+<text class="ts" x="334" y="100" fill="#854F0B">weighting</text>
+
+<line x1="511" y1="61" x2="556" y2="112" class="arr" marker-end="url(#a6)"/>
+<line x1="511" y1="122" x2="556" y2="122" class="arr" marker-end="url(#a6)"/>
+<line x1="511" y1="183" x2="556" y2="132" class="arr" marker-end="url(#a6)"/>
+<g class="c-green"><rect x="558" y="96" width="104" height="52" rx="8" stroke-width="0.5"/><text class="ts" x="610" y="114" text-anchor="middle" dominant-baseline="central">weighted</text><text class="ts" x="610" y="130" text-anchor="middle" dominant-baseline="central">fusion</text></g>
+<text class="ts" x="360" y="226" fill="#5F5E5A">steady camera → trust long horizon · shaky camera → lean short · action loss down-weighted when unstable</text>
+</svg>
+<figcaption>Fig 6 · Ego-adaptive: a camera-feature router blends 3/5/7-frame horizons</figcaption>
+</figure>
+
+</main>
+</body>
+</html>

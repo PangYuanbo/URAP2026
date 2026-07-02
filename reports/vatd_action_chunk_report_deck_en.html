@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VATD · Motion-Action Signals for Tiny-Drone Detection · Progress Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root{
+  --bg:#0d1117; --bg-soft:#161b22; --surface:#161b22; --surface-2:#1c2230;
+  --border:rgba(139,148,158,.22); --border-strong:rgba(139,148,158,.42);
+  --text-1:#e6edf3; --text-2:#9aa7b4; --text-3:#6e7681;
+  --accent:#7ee787; --accent-2:#79c0ff; --accent-3:#ff7b72; --purple:#d2a8ff; --warn:#e3b341;
+  --grad:linear-gradient(120deg,#7ee787 0%,#79c0ff 55%,#d2a8ff 100%);
+  --radius:14px; --radius-lg:20px;
+  --mono:'JetBrains Mono','IBM Plex Mono',SFMono-Regular,Menlo,monospace;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+  --ease:cubic-bezier(.4,0,.2,1);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#000;color:var(--text-1);font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;line-height:1.6;letter-spacing:-.01em}
+code,pre,.mono{font-family:var(--mono)}
+
+/* ---------- deck system ---------- */
+.deck{position:relative;width:100vw;height:100vh;overflow:hidden;background:var(--bg)}
+.slide{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
+  padding:64px 88px 80px;opacity:0;pointer-events:none;z-index:1;
+  transform:translateX(28px);transition:opacity .45s var(--ease),transform .45s var(--ease);
+  overflow:hidden;background:var(--bg)}
+.slide.is-active{opacity:1;pointer-events:auto;transform:none;z-index:2}
+.slide::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:
+  radial-gradient(55% 45% at 92% 8%,rgba(121,192,255,.12),transparent 60%),
+  radial-gradient(48% 48% at 6% 94%,rgba(126,231,135,.08),transparent 60%)}
+.slide>*{position:relative;z-index:1}
+@media print{.slide{position:relative;height:100vh;opacity:1;transform:none;page-break-after:always}}
+
+/* ---------- chrome ---------- */
+.hdr{position:absolute;top:22px;left:40px;right:40px;display:flex;justify-content:space-between;
+  font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--text-3);z-index:10;pointer-events:none}
+.ftr{position:absolute;bottom:20px;left:40px;right:40px;display:flex;justify-content:space-between;
+  font-family:var(--mono);font-size:11.5px;color:var(--text-3);z-index:10;pointer-events:none}
+.progress{position:absolute;bottom:0;left:0;height:3px;background:var(--grad);z-index:20;
+  transition:width .45s var(--ease)}
+
+/* ---------- typography ---------- */
+.kicker{font-family:var(--mono);color:var(--accent);font-size:13px;font-weight:600;margin-bottom:18px}
+.kicker::before{content:"> "}
+.h1{font-size:68px;line-height:1.02;font-weight:800;letter-spacing:-.03em;color:#fff;margin:0}
+.h2{font-size:44px;line-height:1.08;font-weight:700;letter-spacing:-.028em;color:#fff;margin:0 0 8px}
+.lede{font-size:21px;color:var(--text-2);font-weight:300;max-width:66ch;line-height:1.55}
+h3{font-size:20px;font-weight:600;color:#fff;margin:0 0 8px}
+.dim{color:var(--text-2)} .dim3{color:var(--text-3)}
+.grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.mono-accent{color:var(--purple)}
+b,strong{color:#fff;font-weight:600}
+
+/* ---------- primitives ---------- */
+.row{display:flex;gap:22px} .wrap{flex-wrap:wrap} .center{align-items:center}
+.grid{display:grid;gap:18px} .g2{grid-template-columns:1fr 1fr} .g3{grid-template-columns:1fr 1fr 1fr}
+.fill{flex:1}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px}
+.card.acc{border-top:3px solid var(--accent)}
+.card.blue{border-top:3px solid var(--accent-2)}
+.card.red{border-top:3px solid var(--accent-3)}
+.card.purple{border-top:3px solid var(--purple)}
+.pill{display:inline-block;padding:3px 11px;border-radius:999px;font-family:var(--mono);font-size:11.5px;
+  border:1px solid var(--border);color:var(--text-2);background:var(--surface-2)}
+.pill.g{color:var(--accent);border-color:#2c5234}
+.pill.o{color:var(--warn);border-color:#5a4716}
+.pill.b{color:var(--accent-2);border-color:#1f4d6b}
+.divider{height:1px;background:var(--border);margin:14px 0}
+
+/* terminal / code */
+.terminal{background:#010409;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.terminal .bar{display:flex;align-items:center;gap:8px;padding:10px 15px;background:#161b22;
+  border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.terminal .dot{width:11px;height:11px;border-radius:50%;background:#ff5f56}
+.terminal .dot:nth-child(2){background:#ffbd2e}.terminal .dot:nth-child(3){background:#27c93f}
+.terminal .bar .t{margin-left:8px}
+.terminal pre{margin:0;padding:20px 24px;color:#e6edf3;overflow:auto;font-family:var(--mono);
+  font-size:14px;line-height:1.62}
+.kw{color:#ff7b72} .fn{color:#d2a8ff} .str{color:#a5d6ff} .cmt{color:#7d8893;font-style:italic} .num{color:#79c0ff} .var{color:#ffd9a8}
+
+/* flow steps */
+.step{background:var(--surface-2);border:1px solid var(--border);border-left:4px solid var(--accent-2);
+  border-radius:10px;padding:12px 16px}
+.step b{display:block} .step .d{color:var(--text-2);font-size:13.5px}
+.varr{color:var(--accent-2);text-align:center;font-size:18px;margin:4px 0;font-family:var(--mono)}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{border:1px solid var(--border);padding:8px 12px;text-align:left}
+th{background:var(--surface-2);color:var(--accent-2);font-weight:600}
+td .mono{color:var(--var,#ffd9a8)}
+.win{color:var(--accent);font-weight:600}
+
+ul{margin:8px 0;padding-left:20px} li{margin:5px 0;color:var(--text-1)}
+.big{font-size:38px;font-weight:800;letter-spacing:-.03em;color:#fff;font-family:var(--mono)}
+.unit{font-size:14px;color:var(--text-2);font-weight:400}
+
+/* nav hint */
+.navhint{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);font-family:var(--mono);
+  font-size:11px;color:var(--text-3);z-index:30;opacity:.7}
+kbd{font-family:var(--mono);background:var(--surface-2);border:1px solid var(--border);
+  border-radius:4px;padding:1px 6px;font-size:11px;color:var(--text-2)}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+<!-- 1 · COVER -->
+<section class="slide is-active">
+  <div class="kicker">URAP 2026 · Progress Report · Tiny-Drone Detection</div>
+  <div class="h1">VATD: Treating <span class="grad">Action Chunks</span><br>as a Detection Signal</div>
+  <p class="lede" style="margin-top:24px">An independent <b>Vision-Action Transformer</b> that recognizes a few-pixel tiny drone in cluttered scenes by asking whether the target <b>moves like a drone</b>, not just what it looks like in a single frame.</p>
+  <div class="row" style="margin-top:40px;gap:14px">
+    <span class="pill b">Video-Action Tiny Drone Detector</span>
+    <span class="pill">track-before-detect</span>
+    <span class="pill">Octo-style unified data</span>
+  </div>
+  <div class="dim3 mono" style="margin-top:54px;font-size:13px">Presenter: URAP student　·　Baselines: TransVisDrone / YOLOMG / AOT Winner</div>
+</section>
+
+<!-- 2 · AGENDA -->
+<section class="slide">
+  <div class="kicker">agenda</div>
+  <h2 class="h2">What this talk covers</h2>
+  <div class="grid g2" style="margin-top:26px">
+    <div class="card"><h3>01 · Problem &amp; framework role</h3><p class="dim" style="margin:0">Why tiny drones are hard, and where VATD sits in the two-stage framework</p></div>
+    <div class="card"><h3>02 · Core idea: borrow from VLA</h3><p class="dim" style="margin:0">Robot action chunks → drone bbox motion chunks</p></div>
+    <div class="card"><h3>03 · The key design fix</h3><p class="dim" style="margin:0">Not a detector — a dynamics scorer; constant velocity &amp; the residual policy</p></div>
+    <div class="card"><h3>04 · Model evolution + latest gen</h3><p class="dim" style="margin:0">Four generations, up to the camera-adaptive EgoAdaptiveVATD</p></div>
+    <div class="card"><h3>05 · Evaluation discipline</h3><p class="dim" style="margin:0">tracklet → frame → official evaluator; what counts as a "win"</p></div>
+    <div class="card"><h3>06 · Status &amp; next steps</h3><p class="dim" style="margin:0">Done / in progress / to do</p></div>
+  </div>
+</section>
+
+<!-- 3 · PROBLEM + FRAMEWORK -->
+<section class="slide">
+  <div class="kicker">problem</div>
+  <h2 class="h2">Why tiny-drone detection is hard</h2>
+  <div class="row" style="margin-top:18px;gap:28px">
+    <div class="fill">
+      <ul style="font-size:16px;line-height:1.75">
+        <li>Targets are often just <b>a few pixels</b> — single-frame appearance is nearly indistinguishable from birds, insects, specks, compression artifacts.</li>
+        <li>The host platform's own motion (ego-motion) makes the background move too: <b>motion ≠ target</b>.</li>
+        <li>The evaluation protocol (AOT) <b>heavily penalizes false alarms</b>: FAR / FPPI / EDR@300. Raising recall is easy but inflates false alarms.</li>
+        <li>Constraint: <b>heavy training (RTX 5090), lightweight onboard inference</b>.</li>
+      </ul>
+    </div>
+    <div class="fill">
+      <div class="card acc">
+        <div class="dim3 mono" style="font-size:12px;margin-bottom:10px">QSTR-DroneDet · two-stage framework</div>
+        <div class="step"><b>Stage A · over-detect</b><span class="d">YOLO-P2 / motion / tracker, low threshold, recall first</span></div>
+        <div class="varr">↓</div>
+        <div class="step" style="border-left-color:var(--purple)"><b>Stage B · recognize</b><span class="d">crop + feature ROI + temporal tube + motion metadata</span></div>
+        <div class="varr">↓</div>
+        <div class="step" style="border-left-color:var(--accent)"><b>fusion + quality log</b><span class="d">q_H / alignment quality prevents bad motion from dominating</span></div>
+      </div>
+      <p class="dim" style="font-size:13.5px;margin-top:12px"><b style="color:var(--accent)">VATD = a new third signal: motion / action.</b></p>
+    </div>
+  </div>
+</section>
+
+<!-- 4 · CORE IDEA: VLA -->
+<section class="slide">
+  <div class="kicker">core idea</div>
+  <h2 class="h2">Borrowing the "action chunk" from robot VLA</h2>
+  <p class="lede" style="margin:6px 0 22px">The core bet: <b>a drone's way of moving is itself a discriminative feature</b>. Whether a weak tracklet is a drone is scored by how drone-like its motion is, not only by per-frame appearance.</p>
+  <div class="grid g2">
+    <div class="card blue">
+      <h3>🤖 Robot VLA (Octo / ACT)</h3>
+      <p class="dim" style="font-size:14.5px">Observe video → predict a short future <b>action chunk</b> (H steps at once) for coherent, noise-robust action.</p>
+      <p class="mono" style="color:var(--accent-2);font-size:13px;margin:0">robot trajectory → [joint/end-effector deltas]</p>
+    </div>
+    <div class="card acc">
+      <h3>🛸 This project: VATD</h3>
+      <p class="dim" style="font-size:14.5px">Drone video episode → predict the candidate box's short future <b>bbox motion chunk</b>.</p>
+      <p class="mono" style="color:var(--accent);font-size:13px;margin:0">drone tube → [Δbox deltas]</p>
+    </div>
+  </div>
+  <div class="card red" style="margin-top:18px">
+    <p style="margin:0;font-size:15px"><b>Key clarification:</b> the <b>Language branch is dropped</b> → strictly this is <b>VA (Vision-Action), not VLA</b>. Named <span class="mono mono-accent">VATD = Video-Action Tiny Drone Detector</span>, positioned in the paper as "an independent vision-action Transformer", <u>not</u> "TransVisDrone + action chunk".</p>
+  </div>
+</section>
+
+<!-- 5 · ACTION CHUNK REPRESENTATION -->
+<section class="slide">
+  <div class="kicker">representation</div>
+  <h2 class="h2">What an action chunk is</h2>
+  <div class="row" style="gap:24px;margin-top:14px">
+    <div class="fill">
+      <div class="terminal">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">qstr_dronedet/tracking/action_chunk.py</span></div>
+<pre><span class="cmt"># one-frame action = center shift + log scale change</span>
+action_t = [ <span class="var">dx</span>, <span class="var">dy</span>, <span class="var">dlog_w</span>, <span class="var">dlog_h</span> ]
+  dx,dy   = next.cx-prev.cx, next.cy-prev.cy
+  dlog_w  = <span class="fn">log</span>(next.w / prev.w)   <span class="cmt"># multiplicative→log, symmetric</span>
+  dlog_h  = <span class="fn">log</span>(next.h / prev.h)   <span class="cmt"># clip to ±6 to stop blow-ups</span>
+
+<span class="cmt"># one sample: use past N frames to predict next H frames</span>
+chunk = action_{t+1 : t+H}      <span class="cmt"># ← this is the action chunk</span></pre>
+      </div>
+    </div>
+    <div class="fill">
+      <h3 style="font-size:16px">Octo-style unified sample format</h3>
+      <div class="terminal">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">unified tube episode</span></div>
+<pre>{ dataset_source, seq, track_id, anchor_frame,
+  <span class="var">past_boxes</span>[N,4], past_scores[N], past_visible[N],
+  <span class="var">future_actions</span>[H,4], future_boxes[H,4],
+  <span class="var">label</span>, bucket }   <span class="cmt"># 1=drone-like / 0=background</span></pre>
+      </div>
+      <div class="card" style="margin-top:14px;border-left:4px solid var(--warn)">
+        <p style="margin:0;font-size:13.5px"><b>Normalization rule:</b> across datasets, boxes must be normalized per-row by <span class="mono">image_w/h</span> to a shared coordinate system. <b>Pixel coordinates make NPS/AOT/ARD100 dynamics incomparable</b> — exactly what once made learned policies lose to plain constant velocity.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 · KEY CORRECTION -->
+<section class="slide">
+  <div class="kicker">design correction</div>
+  <h2 class="h2">The single most important design fix</h2>
+  <div class="grid g2" style="margin-top:18px">
+    <div class="card red">
+      <span class="pill o">❌ The early mistake</span>
+      <h3 style="margin-top:14px">action chunk as a first-stage detector</h3>
+      <p class="dim" style="font-size:14.5px;margin-bottom:6px">"Predict the next box → call it a detection."</p>
+      <p class="dim3" style="font-size:13.5px;margin:0">A few-pixel error on a tiny box collapses pure coordinate prediction, and it can't answer "is there a drone in this clip at all".</p>
+    </div>
+    <div class="card acc">
+      <span class="pill g">✅ The fix</span>
+      <h3 style="margin-top:14px">action chunk as a dynamics scorer</h3>
+      <p class="dim" style="font-size:14.5px;margin-bottom:6px">Not detection — score a weak candidate tube: is it physically and visually drone-like?</p>
+      <p class="dim3" style="font-size:13.5px;margin:0">i.e. <b style="color:var(--accent)">track-before-detect</b>: form tracklet hypotheses first, then accept by dynamics + evidence.</p>
+    </div>
+  </div>
+  <div class="card" style="margin-top:18px;border-left:4px solid var(--accent-2)">
+    <p style="margin:0;font-size:15px"><b>Empirical finding (2026-06-04): constant velocity (CV) is a surprisingly strong short-horizon baseline.</b> Direct action regression lost to CV; switching to a <b>residual policy</b> that predicts <span class="mono">future_actions − CV_actions</span> was clearly better and nearly matched CV → <b>keep CV as an explicit baseline and only learn the residual / likelihood</b>, rather than replacing it with a black box.</p>
+  </div>
+</section>
+
+<!-- 7 · CV GATE EVIDENCE -->
+<section class="slide">
+  <div class="kicker">evidence · AOT part0</div>
+  <h2 class="h2">Why motion smoothness alone isn't enough</h2>
+  <p class="dim" style="margin:0 0 14px;font-size:15px">TVD pretrained AOT part0 inference + various temporal/CV gates. CV gates do cut false alarms, but they <b>also crush encounter recall</b>:</p>
+  <table>
+    <tr><th>Variant (same detection output)</th><th>HFAR ↓</th><th>AFDR range ↑</th><th>Detection enc.@300</th></tr>
+    <tr><td>TVD + IoU track @0.20</td><td class="mono">6699</td><td class="mono">0.883</td><td class="mono">9 / 10</td></tr>
+    <tr><td>+ gap2 len≥2</td><td class="mono">1464</td><td class="mono">0.656</td><td class="mono">6 / 10</td></tr>
+    <tr><td>+ gap2 len≥3 + CV≥0.75</td><td class="mono">483</td><td class="mono">0.437</td><td class="mono">4 / 10</td></tr>
+    <tr><td>+ gap2 len≥3 + CV≥0.93</td><td class="mono">145</td><td class="mono">0.076</td><td class="mono">1 / 6</td></tr>
+  </table>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card"><p style="margin:0;font-size:14px"><b>Reading:</b> a hard CV gate drops HFAR 1464 → 145, but encounters fall 6/10 → 1/6 and AFDR nearly vanishes.</p></div>
+    <div class="card acc"><p style="margin:0;font-size:14px"><b>Goal:</b> not "longer tracks", but a scorer that learns <b>UAV-like dynamics</b> to <b>recover recall</b> near the <span class="mono">0.55–0.80</span> false-alarm operating point.</p></div>
+  </div>
+</section>
+
+<!-- 8 · ROUTE B PIPELINE -->
+<section class="slide">
+  <div class="kicker">pipeline · Route B</div>
+  <h2 class="h2">How action chunks plug into the system</h2>
+  <div class="grid" style="grid-template-columns:1fr 1fr;gap:14px 26px;margin-top:18px">
+    <div class="step"><b>① Low-threshold over-detect</b><span class="d">YOLOMG/TVD/YOLO-P2 at low threshold, keep weak candidates normally filtered out</span></div>
+    <div class="step" style="border-left-color:var(--purple)"><b>③ Action-chunk dynamics scoring ★</b><span class="d">tube→normalized chunk→VATD→drone-like-motion score + residual consistency</span></div>
+    <div class="step"><b>② Build candidate tubes</b><span class="d">loose gates link short tubes; reused track_ids <b>must be cut at large gaps</b></span></div>
+    <div class="step" style="border-left-color:var(--accent)"><b>④ Integrate evidence → detections</b><span class="d">accept only when detection + dynamics + shape stability + low-background agree</span></div>
+  </div>
+  <div class="divider"></div>
+  <h3 style="font-size:15px;margin-top:6px">Implemented scoring modes</h3>
+  <div class="terminal">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">scorer modes</span></div>
+<pre><span class="var">learned_consistency</span> = exp(-learned_error / scale)               <span class="cmt"># smaller residual = more drone-like</span>
+<span class="var">cv_consistency</span>      = exp(-constant_velocity_error / scale)     <span class="cmt"># CV baseline</span>
+<span class="var">improvement</span>         = sigmoid((cv_error - learned_error)/scale) <span class="cmt"># how much better than CV</span>
+<span class="var">hybrid</span>              = learned_consistency * improvement</pre>
+  </div>
+</section>
+
+<!-- 9 · MODEL EVOLUTION -->
+<section class="slide">
+  <div class="kicker">architecture</div>
+  <h2 class="h2">Four generations of the model</h2>
+  <p class="dim" style="margin:0 0 18px;font-size:14.5px">All in <span class="mono">qstr_dronedet/tracking/video_action_policy.py</span>, evolving from "plain action regression" to a "camera-adaptive motion-action scorer".</p>
+  <div class="grid g2" style="gap:16px">
+    <div class="card"><span class="pill">gen 1</span><h3 style="margin-top:10px;font-size:16px;font-family:var(--mono)">VideoActionChunkTransformer</h3><p class="dim" style="margin:0;font-size:14px">crop+state→Transformer, <b>single head</b> regresses future_actions. Validates the pipeline runs.</p></div>
+    <div class="card"><span class="pill">gen 2</span><h3 style="margin-top:10px;font-size:16px;font-family:var(--mono)">VideoActionMultiHead</h3><p class="dim" style="margin:0;font-size:14px">Adds a classification head: <b>action regression + is-it-drone-like</b>. Action becomes a discriminative signal.</p></div>
+    <div class="card blue"><span class="pill b">gen 3</span><h3 style="margin-top:10px;font-size:16px;font-family:var(--mono)">VATDMotionActionTransformer</h3><p class="dim" style="margin:0;font-size:14px">The real VATD. Main head <b>motion_action</b> (BCE) + auxiliary <b>action_residual</b> (SmoothL1). Emits vatd_score.</p></div>
+    <div class="card acc"><span class="pill g">gen 4 · current</span><h3 style="margin-top:10px;font-size:16px;font-family:var(--mono)">EgoAdaptiveVATDTransformer ★</h3><p class="dim" style="margin:0;font-size:14px">Camera-conditioned + multi-horizon soft adaptation (latest git commits).</p></div>
+  </div>
+</section>
+
+<!-- 10 · EGO ADAPTIVE -->
+<section class="slide">
+  <div class="kicker">latest · ego-adaptive</div>
+  <h2 class="h2">What the latest generation solves</h2>
+  <p class="dim" style="margin:0 0 14px;font-size:15px">Pain point: <b>heavy ego-motion contaminates the observed "action"</b> — the target hasn't moved, but the box moves because the camera did.</p>
+  <div class="row" style="gap:22px">
+    <div class="fill">
+      <div class="card blue" style="margin-bottom:12px"><h3 style="font-size:15px">① Camera-feature conditioning</h3><p class="dim" style="margin:0;font-size:13.5px">Build an ego vector from <span class="mono">camera_dx/dy, camera_speed, warp_error, camera_motion_quality</span> and inject it into every readout token.</p></div>
+      <div class="card acc"><h3 style="font-size:15px">② Multi-horizon + soft router</h3><p class="dim" style="margin:0;font-size:13.5px">Maintain <span class="mono">horizons=(3,5,7)</span>, each with a (motion/action) head pair; a router uses ego features to compute softmax weights that <b>softly fuse</b> them. Steady camera→long horizon, shaky→short.</p></div>
+    </div>
+    <div class="fill">
+      <div class="terminal">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">EgoAdaptiveVATDTransformer.forward</span></div>
+<pre>encoded  = <span class="fn">encoder</span>(visual + state + pos)
+router_w = <span class="fn">softmax</span>(<span class="fn">router</span>(<span class="var">ego_features</span>))  <span class="cmt"># ego sets the weights</span>
+<span class="kw">for</span> h <span class="kw">in</span> (<span class="num">3</span>,<span class="num">5</span>,<span class="num">7</span>):
+    token = encoded[:, -h:].mean(<span class="num">1</span>) + motion + ego
+    m_h, a_h = motion_head_h(token), action_head_h(token)
+<span class="var">motion_logits</span>   = Σ router_w · m_h    <span class="cmt"># drone-like-motion score</span>
+<span class="var">action_residual</span> = Σ router_w · a_h    <span class="cmt"># residual action</span></pre>
+      </div>
+      <p class="dim3" style="font-size:13px;margin-top:10px">The dataset also down-weights action supervision by ego instability: <span class="mono" style="color:var(--var,#ffd9a8)">target_action_weight = clip(1 − ego_instability, 0.15, 1.0)</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- 11 · TRAINING OBJECTIVE -->
+<section class="slide">
+  <div class="kicker">training</div>
+  <h2 class="h2">Training objective &amp; outputs</h2>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card acc">
+      <h3>Loss (MVP)</h3>
+      <div class="terminal" style="margin-top:8px">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+<pre>L = <span class="var">L_motion_action</span>        <span class="cmt"># main: BCE drone-like vs not</span>
+  + λ · <span class="var">L_action_residual</span>  <span class="cmt"># aux: SmoothL1 residual action</span></pre>
+      </div>
+      <p class="dim" style="font-size:13.5px;margin-top:12px">The main task <b>is classification</b>; residual action is only a dynamics prior. The full-detector version adds <span class="mono">L_detection</span>.</p>
+    </div>
+    <div class="card blue">
+      <h3>Scoring output fields</h3>
+      <div class="terminal" style="margin-top:8px">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+<pre><span class="var">motion_action_score</span>
+<span class="var">vatd_action_consistency_score</span>
+<span class="var">vatd_action_residual_center_error</span>
+<span class="var">vatd_score</span>            <span class="cmt"># fused</span></pre>
+      </div>
+      <p class="dim" style="font-size:13.5px;margin-top:12px">Simplest fusion ablation: <span class="mono">final = base_score × motion_action_score</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- 12 · EVALUATION DISCIPLINE -->
+<section class="slide">
+  <div class="kicker">evaluation discipline</div>
+  <h2 class="h2">What counts as a "win"</h2>
+  <p class="dim" style="margin:0 0 16px;font-size:15px">Pretty tracklet-level numbers ≠ a paper result. Everything must be carried back to frame level through an <b>official evaluator</b>:</p>
+  <div class="grid g3" style="gap:14px">
+    <div class="card"><span class="pill">tracklet level</span><p class="dim" style="font-size:13.5px;margin-top:10px">Joint-classifier best_f1. Comparable only to same-protocol tracklet baselines, <b>not</b> NPS mAP / AOT HFAR.</p></div>
+    <div class="card"><span class="pill">frame-level proxy</span><p class="dim" style="font-size:13.5px;margin-top:10px">Apply back to per-frame predictions, P/R/F1 via this repo's GT-CSV/IoU protocol, for <b>threshold selection</b>.</p></div>
+    <div class="card acc"><span class="pill g">official evaluator</span><p class="dim" style="font-size:13.5px;margin-top:10px">NPS: AP@0.5 · AOT: HFAR/FPPI/EDR@300, same split &amp; operating point vs TVD.</p></div>
+  </div>
+  <div class="card purple" style="margin-top:18px">
+    <p style="margin:0;font-size:15px"><b>Win criterion:</b> at the <b>same or lower false-alarm (FPPI/FAR) budget</b>, recall / encounters exceed TransVisDrone (especially for tiny, weak-motion targets). Raw recall alone doesn't count; <span class="mono">claim_gate.status = pass</span> requires at least one fixed-budget recall win.</p>
+  </div>
+</section>
+
+<!-- 12.5 · VERIFIED RESULTS -->
+<section class="slide">
+  <div class="kicker">results · verified</div>
+  <h2 class="h2">Recall up <span class="dim" style="font-size:30px;font-weight:600">&amp; false alarms down</span></h2>
+  <p class="dim" style="margin:0 0 14px;font-size:15px">With <b>soft action-rescoring</b> (not hard filtering), detection rate (AFDR) rises while FAR/FPPI fall at the same encounter count — a real win on the official AOT evaluator.</p>
+  <div class="grid g2" style="gap:18px">
+    <div class="card acc">
+      <h3 style="font-size:16px">AOT fulltest · TVD + action-rescore</h3>
+      <table style="margin-top:10px">
+        <tr><th>Metric</th><th>TVD baseline</th><th>+ action rescore</th><th>Δ</th></tr>
+        <tr><td><b>AFDR ↑ (detection rate)</b></td><td class="mono">0.86847</td><td class="mono">0.88308</td><td class="win">+0.0146</td></tr>
+        <tr><td>FAR ↓</td><td class="mono">89.48</td><td class="mono">83.55</td><td class="win">−5.9</td></tr>
+        <tr><td>FPPI ↓</td><td class="mono">0.26232</td><td class="mono">0.26193</td><td class="win">lower</td></tr>
+        <tr><td>encounter @300</td><td class="mono">162/175</td><td class="mono">162/175</td><td class="dim3">held =</td></tr>
+      </table>
+      <p class="dim3" style="font-size:12.5px;margin:10px 0 0">operating point center=0.20, β=0.40, official AOT evaluator</p>
+    </div>
+    <div class="card blue">
+      <h3 style="font-size:16px">YOLOMG fulltest · recall-preserving</h3>
+      <table style="margin-top:10px">
+        <tr><th>Metric</th><th>baseline</th><th>ours</th><th>Δ</th></tr>
+        <tr><td><b>recall ↑</b></td><td class="mono">0.88739</td><td class="mono">0.90859</td><td class="win">+0.0212</td></tr>
+        <tr><td>AP50 ↑</td><td class="mono">0.8032</td><td class="mono">0.82035</td><td class="win">+0.017</td></tr>
+        <tr><td>FN ↓ (misses)</td><td class="mono">8065</td><td class="mono">7979</td><td class="win">−86</td></tr>
+      </table>
+      <p class="dim3" style="font-size:12.5px;margin:10px 0 0">TP/FP/FN 63551/344702/8065 → 63637/344779/7979</p>
+    </div>
+  </div>
+  <div class="card purple" style="margin-top:16px">
+    <p style="margin:0;font-size:14.5px"><b>The honest caveat:</b> the gain comes from <b>soft rescoring</b>, not a hard action filter — a hard filter collapses recall (AFDR ≈ 0.535). It is still "TVD proposals + Octo-like action model + soft fusion", not yet a fully end-to-end VLA detector. For contrast, a gap-insert variant <b>worsened</b> FAR to 94.88, so the paper mainline is action/VLA-style video-dynamics rescoring — not gap insert.</p>
+  </div>
+</section>
+
+<!-- 13 · STATUS -->
+<section class="slide">
+  <div class="kicker">status · next</div>
+  <h2 class="h2">Status &amp; next steps</h2>
+  <div class="grid g2" style="margin-top:14px;gap:18px">
+    <div>
+      <h3 style="font-size:15px;color:var(--accent)">✅ Done</h3>
+      <ul style="font-size:14.5px">
+        <li>VATD main head + residual head; emits <span class="mono">vatd_score</span> and related fields</li>
+        <li>EgoAdaptiveVATD: camera conditioning + multi-horizon router</li>
+        <li>Frame-difference weak-candidate source (<span class="mono">temporal-saliency</span>) — no longer detector-only</li>
+        <li>Full Route B evaluation chain + official-evaluator bridge</li>
+      </ul>
+      <h3 style="font-size:15px;color:var(--warn);margin-top:14px">🔶 In progress</h3>
+      <ul style="font-size:14.5px">
+        <li>Full-scale crop/video training on AOT/YOLOMG/NPS</li>
+        <li>Source-balanced multi-dataset joint scorer</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="font-size:15px;color:var(--text-2)">⬜ To do</h3>
+      <ul style="font-size:14.5px">
+        <li>A learned <b>dense tiny-object proposal head</b> → a truly end-to-end independent detector</li>
+        <li>Extend the AOT AFDR/recall win to <b>NPS</b> (crop/full run in progress)</li>
+        <li>Diffusion action policy (only once multimodality is shown to help)</li>
+      </ul>
+      <div class="card red" style="margin-top:14px">
+        <p style="margin:0;font-size:13.5px"><b>Honest statement:</b> AOT fulltest shows a <b>verified soft-rescore win</b> (AFDR ↑, FAR/FPPI ↓) on the official evaluator, but it is still <b>"TVD proposals + Octo-like action model + soft fusion"</b>, not a fully end-to-end VLA detector. NPS is not yet a clean win. A full paper claim needs multi-dataset training + frozen held-out.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 · SUMMARY / Q&A -->
+<section class="slide center" style="justify-content:center;align-items:flex-start">
+  <div class="kicker">summary · Q&amp;A</div>
+  <h2 class="h2" style="font-size:52px">In one sentence</h2>
+  <p class="lede" style="font-size:23px;margin-top:18px;max-width:72ch">VATD borrows the robot VLA <b class="grad">action chunk</b> idea — <b>drops language</b> and reshapes it from "a detector that predicts the next box" into "a <b>dynamics scorer</b> that judges whether a weak tracklet moves like a drone". The latest EgoAdaptiveVATD adds camera-motion conditioning and multi-horizon soft routing to fight host-platform shake contaminating tracklets.</p>
+  <div class="row wrap" style="margin-top:32px;gap:12px">
+    <span class="pill g">motion = a third discriminative signal</span>
+    <span class="pill b">track-before-detect</span>
+    <span class="pill">higher recall at equal false-alarm budget</span>
+  </div>
+  <div class="dim3 mono" style="margin-top:46px;font-size:13px">Source: video_action_policy.py · action_chunk.py　|　Doc: doc/vatd_independent_octo_style_architecture_2026_06_05.md</div>
+  <div class="big" style="margin-top:28px">Thank you · Q &amp; A</div>
+</section>
+
+<div class="progress" id="bar"></div>
+</div>
+<div class="navhint"><kbd>←</kbd> <kbd>→</kbd> navigate　·　<kbd>F</kbd> fullscreen</div>
+
+<script>
+(function(){
+  const slides=[...document.querySelectorAll('.slide')];
+  const bar=document.getElementById('bar');
+  let i=0;
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('is-active',k===i));
+    bar.style.width=((i+1)/slides.length*100)+'%';
+  }
+  function chrome(){
+    slides.forEach((s,k)=>{
+      if(s.querySelector('.hdr'))return;
+      const h=document.createElement('div');h.className='hdr';
+      h.innerHTML='<span>VATD · Action-Chunk</span><span>URAP 2026</span>';
+      const f=document.createElement('div');f.className='ftr';
+      f.innerHTML='<span>Tiny-Drone Detection · Progress Report</span><span>'+String(k+1).padStart(2,'0')+' / '+String(slides.length).padStart(2,'0')+'</span>';
+      s.appendChild(h);s.appendChild(f);
+    });
+  }
+  chrome();show(0);
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){show(i+1);e.preventDefault();}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){show(i-1);e.preventDefault();}
+    else if(e.key==='Home'){show(0);}
+    else if(e.key==='End'){show(slides.length-1);}
+    else if(e.key.toLowerCase()==='f'){if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen();}
+  });
+  document.addEventListener('click',e=>{ if(e.target.closest('a,kbd'))return; const x=e.clientX/window.innerWidth; show(x>0.5?i+1:i-1); });
+})();
+</script>
+</body>
+</html>

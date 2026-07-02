@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VATD · 用运动-动作信号做微小无人机检测 · 进度汇报</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root{
+  --bg:#0d1117; --bg-soft:#161b22; --surface:#161b22; --surface-2:#1c2230;
+  --border:rgba(139,148,158,.22); --border-strong:rgba(139,148,158,.42);
+  --text-1:#e6edf3; --text-2:#9aa7b4; --text-3:#6e7681;
+  --accent:#7ee787; --accent-2:#79c0ff; --accent-3:#ff7b72; --purple:#d2a8ff; --warn:#e3b341;
+  --grad:linear-gradient(120deg,#7ee787 0%,#79c0ff 55%,#d2a8ff 100%);
+  --radius:14px; --radius-lg:20px;
+  --mono:'JetBrains Mono','IBM Plex Mono',SFMono-Regular,Menlo,monospace;
+  --sans:'Inter','Noto Sans SC',-apple-system,BlinkMacSystemFont,sans-serif;
+  --ease:cubic-bezier(.4,0,.2,1);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#000;color:var(--text-1);font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;line-height:1.6;letter-spacing:-.01em}
+code,pre,.mono{font-family:var(--mono)}
+
+/* ---------- deck system ---------- */
+.deck{position:relative;width:100vw;height:100vh;overflow:hidden;background:var(--bg)}
+.slide{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
+  padding:64px 88px 80px;opacity:0;pointer-events:none;z-index:1;
+  transform:translateX(28px);transition:opacity .45s var(--ease),transform .45s var(--ease);
+  overflow:hidden;background:var(--bg)}
+.slide.is-active{opacity:1;pointer-events:auto;transform:none;z-index:2}
+.slide::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:
+  radial-gradient(55% 45% at 92% 8%,rgba(121,192,255,.12),transparent 60%),
+  radial-gradient(48% 48% at 6% 94%,rgba(126,231,135,.08),transparent 60%)}
+.slide>*{position:relative;z-index:1}
+@media print{.slide{position:relative;height:100vh;opacity:1;transform:none;page-break-after:always}}
+
+/* ---------- chrome ---------- */
+.hdr{position:absolute;top:22px;left:40px;right:40px;display:flex;justify-content:space-between;
+  font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--text-3);z-index:10;pointer-events:none}
+.ftr{position:absolute;bottom:20px;left:40px;right:40px;display:flex;justify-content:space-between;
+  font-family:var(--mono);font-size:11.5px;color:var(--text-3);z-index:10;pointer-events:none}
+.progress{position:absolute;bottom:0;left:0;height:3px;background:var(--grad);z-index:20;
+  transition:width .45s var(--ease)}
+
+/* ---------- typography ---------- */
+.kicker{font-family:var(--mono);color:var(--accent);font-size:13px;font-weight:600;margin-bottom:18px}
+.kicker::before{content:"> "}
+.h1{font-size:72px;line-height:1.02;font-weight:800;letter-spacing:-.03em;color:#fff;margin:0}
+.h2{font-size:46px;line-height:1.08;font-weight:700;letter-spacing:-.028em;color:#fff;margin:0 0 8px}
+.lede{font-size:21px;color:var(--text-2);font-weight:300;max-width:64ch;line-height:1.55}
+h3{font-size:20px;font-weight:600;color:#fff;margin:0 0 8px}
+.dim{color:var(--text-2)} .dim3{color:var(--text-3)}
+.grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.mono-accent{color:var(--purple)}
+b,strong{color:#fff;font-weight:600}
+
+/* ---------- primitives ---------- */
+.row{display:flex;gap:22px} .wrap{flex-wrap:wrap} .center{align-items:center}
+.grid{display:grid;gap:18px} .g2{grid-template-columns:1fr 1fr} .g3{grid-template-columns:1fr 1fr 1fr}
+.fill{flex:1}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px}
+.card.acc{border-top:3px solid var(--accent)}
+.card.blue{border-top:3px solid var(--accent-2)}
+.card.red{border-top:3px solid var(--accent-3)}
+.card.purple{border-top:3px solid var(--purple)}
+.pill{display:inline-block;padding:3px 11px;border-radius:999px;font-family:var(--mono);font-size:11.5px;
+  border:1px solid var(--border);color:var(--text-2);background:var(--surface-2)}
+.pill.g{color:var(--accent);border-color:#2c5234}
+.pill.o{color:var(--warn);border-color:#5a4716}
+.pill.b{color:var(--accent-2);border-color:#1f4d6b}
+.divider{height:1px;background:var(--border);margin:14px 0}
+
+/* terminal / code */
+.terminal{background:#010409;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.terminal .bar{display:flex;align-items:center;gap:8px;padding:10px 15px;background:#161b22;
+  border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12px;color:var(--text-3)}
+.terminal .dot{width:11px;height:11px;border-radius:50%;background:#ff5f56}
+.terminal .dot:nth-child(2){background:#ffbd2e}.terminal .dot:nth-child(3){background:#27c93f}
+.terminal .bar .t{margin-left:8px}
+.terminal pre{margin:0;padding:20px 24px;color:#e6edf3;overflow:auto;font-family:var(--mono);
+  font-size:14.5px;line-height:1.62}
+.kw{color:#ff7b72} .fn{color:#d2a8ff} .str{color:#a5d6ff} .cmt{color:#7d8893;font-style:italic} .num{color:#79c0ff} .var{color:#ffd9a8}
+
+/* flow steps */
+.step{background:var(--surface-2);border:1px solid var(--border);border-left:4px solid var(--accent-2);
+  border-radius:10px;padding:12px 16px}
+.step b{display:block} .step .d{color:var(--text-2);font-size:13.5px}
+.varr{color:var(--accent-2);text-align:center;font-size:18px;margin:4px 0;font-family:var(--mono)}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{border:1px solid var(--border);padding:8px 12px;text-align:left}
+th{background:var(--surface-2);color:var(--accent-2);font-weight:600}
+td .mono{color:var(--var,#ffd9a8)}
+.win{color:var(--accent);font-weight:600}
+
+ul{margin:8px 0;padding-left:20px} li{margin:5px 0;color:var(--text-1)}
+.big{font-size:40px;font-weight:800;letter-spacing:-.03em;color:#fff;font-family:var(--mono)}
+.unit{font-size:14px;color:var(--text-2);font-weight:400}
+
+/* nav hint */
+.navhint{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);font-family:var(--mono);
+  font-size:11px;color:var(--text-3);z-index:30;opacity:.7}
+kbd{font-family:var(--mono);background:var(--surface-2);border:1px solid var(--border);
+  border-radius:4px;padding:1px 6px;font-size:11px;color:var(--text-2)}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+<!-- 1 · COVER -->
+<section class="slide is-active">
+  <div class="kicker">URAP 2026 · 进度汇报 · 微小无人机检测</div>
+  <div class="h1">VATD：把 <span class="grad">动作分块</span><br>当作检测信号</div>
+  <p class="lede" style="margin-top:24px">一个独立的<b>视觉-动作 (Vision-Action) Transformer</b>，用「目标动起来像不像无人机」来识别复杂背景下只有几个像素的微小无人机。</p>
+  <div class="row" style="margin-top:40px;gap:14px">
+    <span class="pill b">Video-Action Tiny Drone Detector</span>
+    <span class="pill">track-before-detect</span>
+    <span class="pill">Octo-style 统一数据</span>
+  </div>
+  <div class="dim3 mono" style="margin-top:54px;font-size:13px">汇报人：URAP 学生　·　基线对比：TransVisDrone / YOLOMG / AOT Winner</div>
+</section>
+
+<!-- 2 · AGENDA -->
+<section class="slide">
+  <div class="kicker">agenda</div>
+  <h2 class="h2">今天讲什么</h2>
+  <div class="grid g2" style="margin-top:26px">
+    <div class="card"><h3>01 · 问题与框架定位</h3><p class="dim" style="margin:0">微小无人机为什么难，VATD 在两阶段框架里的位置</p></div>
+    <div class="card"><h3>02 · 核心思路：借鉴 VLA</h3><p class="dim" style="margin:0">机器人 action chunk → 无人机 bbox 运动分块</p></div>
+    <div class="card"><h3>03 · 关键设计修正</h3><p class="dim" style="margin:0">不做检测器，做动力学打分器；匀速基线与残差策略</p></div>
+    <div class="card"><h3>04 · 模型演化 + 最新一代</h3><p class="dim" style="margin:0">四代结构，到相机自适应的 EgoAdaptiveVATD</p></div>
+    <div class="card"><h3>05 · 评测纪律</h3><p class="dim" style="margin:0">tracklet → frame → 官方评测器，怎样才算「赢」</p></div>
+    <div class="card"><h3>06 · 现状与下一步</h3><p class="dim" style="margin:0">已完成 / 进行中 / 待办</p></div>
+  </div>
+</section>
+
+<!-- 3 · PROBLEM + FRAMEWORK -->
+<section class="slide">
+  <div class="kicker">problem</div>
+  <h2 class="h2">微小无人机检测的难点</h2>
+  <div class="row" style="margin-top:18px;gap:28px">
+    <div class="fill">
+      <ul style="font-size:16px;line-height:1.75">
+        <li>目标常常只有 <b>几个像素</b>，单帧外观和鸟、虫、噪点、压缩伪影几乎不可分。</li>
+        <li>载机自身运动 (ego-motion) 让背景也在动，<b>运动 ≠ 目标</b>。</li>
+        <li>评测协议（AOT）<b>重罚误报</b>：FAR / FPPI / EDR@300。提高召回很容易，但会同时拉高误报。</li>
+        <li>约束：<b>重训练（RTX 5090）、轻推理（机载）</b>。</li>
+      </ul>
+    </div>
+    <div class="fill">
+      <div class="card acc">
+        <div class="dim3 mono" style="font-size:12px;margin-bottom:10px">QSTR-DroneDet · 两阶段框架</div>
+        <div class="step"><b>Stage A · 过检</b><span class="d">YOLO-P2 / 运动 / tracker，低阈值只要召回</span></div>
+        <div class="varr">↓</div>
+        <div class="step" style="border-left-color:var(--purple)"><b>Stage B · 识别</b><span class="d">crop + 特征 ROI + 时序 tube + 运动元数据</span></div>
+        <div class="varr">↓</div>
+        <div class="step" style="border-left-color:var(--accent)"><b>融合 + 质量日志</b><span class="d">q_H / 对齐质量防止坏运动主导</span></div>
+      </div>
+      <p class="dim" style="font-size:13.5px;margin-top:12px"><b style="color:var(--accent)">VATD = 新加入的第三类信号：运动 / 动作。</b></p>
+    </div>
+  </div>
+</section>
+
+<!-- 4 · CORE IDEA: VLA -->
+<section class="slide">
+  <div class="kicker">core idea</div>
+  <h2 class="h2">借鉴机器人 VLA 的「动作分块」</h2>
+  <p class="lede" style="margin:6px 0 22px">核心赌注：<b>无人机的运动方式本身就是判别特征</b>。一段弱轨迹是不是无人机，用它动起来像不像来打分，而不只看每帧外观。</p>
+  <div class="grid g2">
+    <div class="card blue">
+      <h3>🤖 机器人 VLA (Octo / ACT)</h3>
+      <p class="dim" style="font-size:14.5px">观测视频 → 一次预测未来一小段 <b>action chunk</b>（H 步动作），让动作连贯、抗噪。</p>
+      <p class="mono" style="color:var(--accent-2);font-size:13px;margin:0">机器人轨迹 → [关节/末端位移序列]</p>
+    </div>
+    <div class="card acc">
+      <h3>🛸 本项目 VATD</h3>
+      <p class="dim" style="font-size:14.5px">无人机视频 episode → 预测候选框未来一小段的 <b>bbox 运动分块</b>。</p>
+      <p class="mono" style="color:var(--accent);font-size:13px;margin:0">无人机 tube → [Δ框 位移序列]</p>
+    </div>
+  </div>
+  <div class="card red" style="margin-top:18px">
+    <p style="margin:0;font-size:15px"><b>关键澄清：</b>这里<b>砍掉了 Language 分支</b> → 严格说是 <b>VA（Vision-Action），不是 VLA</b>。命名 <span class="mono mono-accent">VATD = Video-Action Tiny Drone Detector</span>，论文定位为「一个独立的视觉-动作 Transformer」，<u>不是</u>「TransVisDrone + action chunk」。</p>
+  </div>
+</section>
+
+<!-- 5 · ACTION CHUNK REPRESENTATION -->
+<section class="slide">
+  <div class="kicker">representation</div>
+  <h2 class="h2">什么是一个 action chunk</h2>
+  <div class="row" style="gap:24px;margin-top:14px">
+    <div class="fill">
+      <div class="terminal">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">qstr_dronedet/tracking/action_chunk.py</span></div>
+<pre><span class="cmt"># 一帧的动作 = 中心位移 + 尺度的对数变化</span>
+action_t = [ <span class="var">dx</span>, <span class="var">dy</span>, <span class="var">dlog_w</span>, <span class="var">dlog_h</span> ]
+  dx,dy   = next.cx-prev.cx, next.cy-prev.cy
+  dlog_w  = <span class="fn">log</span>(next.w / prev.w)   <span class="cmt"># 乘性→取对数, 对称好回归</span>
+  dlog_h  = <span class="fn">log</span>(next.h / prev.h)   <span class="cmt"># clip 到 ±6 防尺度爆炸</span>
+
+<span class="cmt"># 一个样本: 用过去 N 帧预测未来 H 帧</span>
+chunk = action_{t+1 : t+H}      <span class="cmt"># ← 这就是 action chunk</span></pre>
+      </div>
+    </div>
+    <div class="fill">
+      <h3 style="font-size:16px">Octo-style 统一样本格式</h3>
+      <div class="terminal">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">统一 tube episode</span></div>
+<pre>{ dataset_source, seq, track_id, anchor_frame,
+  <span class="var">past_boxes</span>[N,4], past_scores[N], past_visible[N],
+  <span class="var">future_actions</span>[H,4], future_boxes[H,4],
+  <span class="var">label</span>, bucket }   <span class="cmt"># 1=类无人机 / 0=背景</span></pre>
+      </div>
+      <div class="card" style="margin-top:14px;border-left:4px solid var(--warn)">
+        <p style="margin:0;font-size:13.5px"><b>归一化铁律：</b>多数据集必须逐行用 <span class="mono">image_w/h</span> 归一化到统一坐标系。<b>像素坐标会让 NPS/AOT/ARD100 动力学不可比</b>，正是这点曾让学习策略打不过简单匀速。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 · KEY CORRECTION -->
+<section class="slide">
+  <div class="kicker">design correction</div>
+  <h2 class="h2">最重要的一个设计修正</h2>
+  <div class="grid g2" style="margin-top:18px">
+    <div class="card red">
+      <span class="pill o">❌ 一开始想错</span>
+      <h3 style="margin-top:14px">action chunk 当第一级检测器</h3>
+      <p class="dim" style="font-size:14.5px;margin-bottom:6px">「预测下一个框 → 当成检测结果」。</p>
+      <p class="dim3" style="font-size:13.5px;margin:0">微小框上几像素误差就让纯坐标预测崩掉，而且回答不了「这段里到底有没有无人机」。</p>
+    </div>
+    <div class="card acc">
+      <span class="pill g">✅ 修正后</span>
+      <h3 style="margin-top:14px">action chunk 当动力学打分器</h3>
+      <p class="dim" style="font-size:14.5px;margin-bottom:6px">不做检测，而是给一条弱候选 tube 打分：物理上、视觉上像不像无人机。</p>
+      <p class="dim3" style="font-size:13.5px;margin:0">即 <b style="color:var(--accent)">track-before-detect</b>：先连轨迹假设，再用动力学+证据决定是否接受。</p>
+    </div>
+  </div>
+  <div class="card" style="margin-top:18px;border-left:4px solid var(--accent-2)">
+    <p style="margin:0;font-size:15px"><b>实验发现（2026-06-04）：匀速 (constant velocity) 是个意外地强的短时程基线。</b>直接回归动作打不过匀速；改成预测 <span class="mono">future_actions − 匀速动作</span> 的<b>残差策略</b>后明显变好、几乎追平匀速 → 应当<b>把匀速当显式基线，只学其上的残差/似然</b>，而非黑盒替换。</p>
+  </div>
+</section>
+
+<!-- 7 · CV GATE EVIDENCE -->
+<section class="slide">
+  <div class="kicker">evidence · AOT part0</div>
+  <h2 class="h2">为什么不能只靠运动平滑</h2>
+  <p class="dim" style="margin:0 0 14px;font-size:15px">TVD 预训练 AOT part0 推理 + 不同时序/匀速门限。匀速门限确实压低误报，但也<b>同时砸掉 encounter 召回</b>：</p>
+  <table>
+    <tr><th>变体（同一检测输出）</th><th>HFAR ↓</th><th>AFDR range ↑</th><th>Detection enc.@300</th></tr>
+    <tr><td>TVD + IoU track @0.20</td><td class="mono">6699</td><td class="mono">0.883</td><td class="mono">9 / 10</td></tr>
+    <tr><td>+ gap2 len≥2</td><td class="mono">1464</td><td class="mono">0.656</td><td class="mono">6 / 10</td></tr>
+    <tr><td>+ gap2 len≥3 + CV≥0.75</td><td class="mono">483</td><td class="mono">0.437</td><td class="mono">4 / 10</td></tr>
+    <tr><td>+ gap2 len≥3 + CV≥0.93</td><td class="mono">145</td><td class="mono">0.076</td><td class="mono">1 / 6</td></tr>
+  </table>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card"><p style="margin:0;font-size:14px"><b>读法：</b>硬性匀速门限把 HFAR 从 1464 → 145，但 encounter 也从 6/10 掉到 1/6，AFDR 几乎归零。</p></div>
+    <div class="card acc"><p style="margin:0;font-size:14px"><b>目标：</b>不是「更长的轨迹」，而是学一个<b>判别 UAV 式动力学</b>的打分器，在 <span class="mono">0.55–0.80</span> 误报工作点附近<b>把召回拉回来</b>。</p></div>
+  </div>
+</section>
+
+<!-- 8 · ROUTE B PIPELINE -->
+<section class="slide">
+  <div class="kicker">pipeline · Route B</div>
+  <h2 class="h2">动作分块怎么接进系统</h2>
+  <div class="grid" style="grid-template-columns:1fr 1fr;gap:14px 26px;margin-top:18px">
+    <div class="step"><b>① 低阈值过检</b><span class="d">YOLOMG/TVD/YOLO-P2 低阈值，保留平时被滤掉的弱候选</span></div>
+    <div class="step" style="border-left-color:var(--purple)"><b>③ Action-chunk 动力学打分 ★</b><span class="d">tube→归一化 chunk→VATD→类无人机运动分 + 残差一致性</span></div>
+    <div class="step"><b>② 构造候选 tube</b><span class="d">宽松门限连成短 tube；复用 track_id 大间隔处<b>必须按 gap 切断</b></span></div>
+    <div class="step" style="border-left-color:var(--accent)"><b>④ 证据整合 → 逐帧检测</b><span class="d">检测证据 + 动力学似然 + 形状稳定 + 低背景概率 一致才接受</span></div>
+  </div>
+  <div class="divider"></div>
+  <h3 style="font-size:15px;margin-top:6px">已实现的打分模式</h3>
+  <div class="terminal">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">scorer modes</span></div>
+<pre><span class="var">learned_consistency</span> = exp(-learned_error / scale)               <span class="cmt"># 残差误差越小越像</span>
+<span class="var">cv_consistency</span>      = exp(-constant_velocity_error / scale)     <span class="cmt"># 匀速基线</span>
+<span class="var">improvement</span>         = sigmoid((cv_error - learned_error)/scale) <span class="cmt"># 学习比匀速好多少</span>
+<span class="var">hybrid</span>              = learned_consistency * improvement</pre>
+  </div>
+</section>
+
+<!-- 9 · MODEL EVOLUTION -->
+<section class="slide">
+  <div class="kicker">architecture</div>
+  <h2 class="h2">模型的四代演化</h2>
+  <p class="dim" style="margin:0 0 18px;font-size:14.5px">都在 <span class="mono">qstr_dronedet/tracking/video_action_policy.py</span>，从「单纯回归动作」走到「相机自适应的运动-动作打分器」。</p>
+  <div class="grid g2" style="gap:16px">
+    <div class="card"><span class="pill">gen 1</span><h3 style="margin-top:10px;font-size:16px;font-family:var(--mono)">VideoActionChunkTransformer</h3><p class="dim" style="margin:0;font-size:14px">crop+state→Transformer，<b>单头</b>回归 future_actions。验证管线能跑。</p></div>
+    <div class="card"><span class="pill">gen 2</span><h3 style="margin-top:10px;font-size:16px;font-family:var(--mono)">VideoActionMultiHead</h3><p class="dim" style="margin:0;font-size:14px">加分类头：<b>动作回归 + 是否类无人机</b>。动作开始当判别信号。</p></div>
+    <div class="card blue"><span class="pill b">gen 3</span><h3 style="margin-top:10px;font-size:16px;font-family:var(--mono)">VATDMotionActionTransformer</h3><p class="dim" style="margin:0;font-size:14px">正式 VATD。主头 <b>motion_action</b>(BCE) + 辅助 <b>action_residual</b>(SmoothL1)。输出 vatd_score。</p></div>
+    <div class="card acc"><span class="pill g">gen 4 · 当前</span><h3 style="margin-top:10px;font-size:16px;font-family:var(--mono)">EgoAdaptiveVATDTransformer ★</h3><p class="dim" style="margin:0;font-size:14px">相机条件化 + 多时程软自适应（git 最新几个 commit）。</p></div>
+  </div>
+</section>
+
+<!-- 10 · EGO ADAPTIVE -->
+<section class="slide">
+  <div class="kicker">latest · ego-adaptive</div>
+  <h2 class="h2">最新一代在解决什么</h2>
+  <p class="dim" style="margin:0 0 14px;font-size:15px">痛点：<b>剧烈 ego-motion 会污染观测到的「动作」</b>——目标没动，但相机动了框也在动。</p>
+  <div class="row" style="gap:22px">
+    <div class="fill">
+      <div class="card blue" style="margin-bottom:12px"><h3 style="font-size:15px">① 相机特征条件化</h3><p class="dim" style="margin:0;font-size:13.5px">从行里取 <span class="mono">camera_dx/dy, camera_speed, warp_error, camera_motion_quality</span> 组成 ego 向量，注入每个 readout token。</p></div>
+      <div class="card acc"><h3 style="font-size:15px">② 多时程 + 软路由</h3><p class="dim" style="margin:0;font-size:13.5px">维护 <span class="mono">horizons=(3,5,7)</span>，每个一对 (motion/action) 头；router 用 ego 算 softmax 权重<b>软加权</b>融合。相机稳→长时程，相机抖→短时程。</p></div>
+    </div>
+    <div class="fill">
+      <div class="terminal">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">EgoAdaptiveVATDTransformer.forward</span></div>
+<pre>encoded  = <span class="fn">encoder</span>(visual + state + pos)
+router_w = <span class="fn">softmax</span>(<span class="fn">router</span>(<span class="var">ego_features</span>))  <span class="cmt"># ego 决定权重</span>
+<span class="kw">for</span> h <span class="kw">in</span> (<span class="num">3</span>,<span class="num">5</span>,<span class="num">7</span>):
+    token = encoded[:, -h:].mean(<span class="num">1</span>) + motion + ego
+    m_h, a_h = motion_head_h(token), action_head_h(token)
+<span class="var">motion_logits</span>   = Σ router_w · m_h    <span class="cmt"># 类无人机运动分</span>
+<span class="var">action_residual</span> = Σ router_w · a_h    <span class="cmt"># 残差动作</span></pre>
+      </div>
+      <p class="dim3" style="font-size:13px;margin-top:10px">数据集还按 ego 不稳定度降低动作监督权重：<span class="mono" style="color:var(--var,#ffd9a8)">target_action_weight = clip(1 − ego_instability, 0.15, 1.0)</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- 11 · TRAINING OBJECTIVE -->
+<section class="slide">
+  <div class="kicker">training</div>
+  <h2 class="h2">训练目标与输出</h2>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card acc">
+      <h3>损失（MVP）</h3>
+      <div class="terminal" style="margin-top:8px">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+<pre>L = <span class="var">L_motion_action</span>        <span class="cmt"># 主: BCE 类无人机 vs 非</span>
+  + λ · <span class="var">L_action_residual</span>  <span class="cmt"># 辅: SmoothL1 残差动作</span></pre>
+      </div>
+      <p class="dim" style="font-size:13.5px;margin-top:12px">主任务<b>是分类</b>；残差动作只当动力学先验。完整检测器版再加 <span class="mono">L_detection</span>。</p>
+    </div>
+    <div class="card blue">
+      <h3>打分输出字段</h3>
+      <div class="terminal" style="margin-top:8px">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+<pre><span class="var">motion_action_score</span>
+<span class="var">vatd_action_consistency_score</span>
+<span class="var">vatd_action_residual_center_error</span>
+<span class="var">vatd_score</span>            <span class="cmt"># 融合后</span></pre>
+      </div>
+      <p class="dim" style="font-size:13.5px;margin-top:12px">最简融合消融：<span class="mono">final = base_score × motion_action_score</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- 12 · EVALUATION DISCIPLINE -->
+<section class="slide">
+  <div class="kicker">evaluation discipline</div>
+  <h2 class="h2">怎样才算「赢」</h2>
+  <p class="dim" style="margin:0 0 16px;font-size:15px">tracklet 级好看的数字 ≠ 论文结果。必须一路打回帧级、过<b>官方评测器</b>：</p>
+  <div class="grid g3" style="gap:14px">
+    <div class="card"><span class="pill">tracklet 级</span><p class="dim" style="font-size:13.5px;margin-top:10px">联合分类器 best_f1。只能和同协议 tracklet 基线比，<b>不能</b>当 NPS mAP / AOT HFAR。</p></div>
+    <div class="card"><span class="pill">帧级代理</span><p class="dim" style="font-size:13.5px;margin-top:10px">贴回逐帧预测，用本仓库 GT-CSV/IoU 协议算 P/R/F1，<b>工程选阈值</b>用。</p></div>
+    <div class="card acc"><span class="pill g">官方评测器</span><p class="dim" style="font-size:13.5px;margin-top:10px">NPS: AP@0.5 · AOT: HFAR/FPPI/EDR@300，同 split、同工作点对比 TVD。</p></div>
+  </div>
+  <div class="card purple" style="margin-top:18px">
+    <p style="margin:0;font-size:15px"><b>赢的判据：</b>在<b>相同或更低的误报 (FPPI/FAR) 预算</b>下，召回 / encounter 高于 TransVisDrone（尤其微小、弱运动目标）。光提原始召回不算赢；<span class="mono">claim_gate.status = pass</span> 要求至少一个固定预算下的召回 win。</p>
+  </div>
+</section>
+
+<!-- 13 · STATUS -->
+<section class="slide">
+  <div class="kicker">status · next</div>
+  <h2 class="h2">现状与下一步</h2>
+  <div class="grid g2" style="margin-top:14px;gap:18px">
+    <div>
+      <h3 style="font-size:15px;color:var(--accent)">✅ 已完成</h3>
+      <ul style="font-size:14.5px">
+        <li>VATD 主头 + 残差头；输出 <span class="mono">vatd_score</span> 等字段</li>
+        <li>EgoAdaptiveVATD：相机条件化 + 多时程 router</li>
+        <li>帧差分弱候选源（<span class="mono">temporal-saliency</span>），不再只依赖外部检测器</li>
+        <li>完整 Route B 评测链 + 官方评测器桥接</li>
+      </ul>
+      <h3 style="font-size:15px;color:var(--warn);margin-top:14px">🔶 进行中</h3>
+      <ul style="font-size:14.5px">
+        <li>AOT/YOLOMG/NPS 全量 crop/video 训练</li>
+        <li>多数据集源平衡的联合打分器</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="font-size:15px;color:var(--text-2)">⬜ 待办</h3>
+      <ul style="font-size:14.5px">
+        <li>学习式<b>稠密微目标 proposal 头</b> → 真正端到端独立检测器</li>
+        <li>在固定 FPPI 预算下，对 TVD 拿到帧/视频级召回 win</li>
+        <li>diffusion action policy（仅在确定多模态有收益后）</li>
+      </ul>
+      <div class="card red" style="margin-top:14px">
+        <p style="margin:0;font-size:13.5px"><b>诚实声明：</b>当前官方 MVP 仍是<b>对检测器 tube 重打分</b>；所有 smoke 结果是接线验证，不是冻结 benchmark。论文 claim 需多数据集训练 + 冻结 held-out + 官方评测器。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 · SUMMARY / Q&A -->
+<section class="slide center" style="justify-content:center;align-items:flex-start">
+  <div class="kicker">summary · Q&amp;A</div>
+  <h2 class="h2" style="font-size:54px">一句话总结</h2>
+  <p class="lede" style="font-size:24px;margin-top:18px;max-width:70ch">VATD 把机器人 VLA 的 <b class="grad">action chunk</b> 借过来——<b>砍掉语言</b>，并把它从「预测下一个框的检测器」改造成「判断一段弱轨迹动起来像不像无人机的<b>动力学打分器</b>」。最新的 EgoAdaptiveVATD 用相机运动做条件化与多时程软路由，专治载机抖动污染轨迹。</p>
+  <div class="row wrap" style="margin-top:32px;gap:12px">
+    <span class="pill g">运动 = 第三类判别信号</span>
+    <span class="pill b">track-before-detect</span>
+    <span class="pill">相同误报预算下提召回</span>
+  </div>
+  <div class="dim3 mono" style="margin-top:46px;font-size:13px">源码: video_action_policy.py · action_chunk.py　|　文档: doc/vatd_independent_octo_style_architecture_2026_06_05.md</div>
+  <div class="big" style="margin-top:28px">谢谢 · Q &amp; A</div>
+</section>
+
+<div class="progress" id="bar"></div>
+</div>
+<div class="navhint"><kbd>←</kbd> <kbd>→</kbd> 翻页　·　<kbd>F</kbd> 全屏</div>
+
+<script>
+(function(){
+  const slides=[...document.querySelectorAll('.slide')];
+  const bar=document.getElementById('bar');
+  let i=0;
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('is-active',k===i));
+    bar.style.width=((i+1)/slides.length*100)+'%';
+    slides[i].querySelectorAll('.hdr,.ftr').forEach(()=>{});
+  }
+  function chrome(){
+    slides.forEach((s,k)=>{
+      if(s.querySelector('.hdr'))return;
+      const h=document.createElement('div');h.className='hdr';
+      h.innerHTML='<span>VATD · Action-Chunk</span><span>URAP 2026</span>';
+      const f=document.createElement('div');f.className='ftr';
+      f.innerHTML='<span>微小无人机检测 · 进度汇报</span><span>'+String(k+1).padStart(2,'0')+' / '+String(slides.length).padStart(2,'0')+'</span>';
+      s.appendChild(h);s.appendChild(f);
+    });
+  }
+  chrome();show(0);
+  document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){show(i+1);e.preventDefault();}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){show(i-1);e.preventDefault();}
+    else if(e.key==='Home'){show(0);}
+    else if(e.key==='End'){show(slides.length-1);}
+    else if(e.key.toLowerCase()==='f'){if(!document.fullscreenElement)document.documentElement.requestFullscreen();else document.exitFullscreen();}
+  });
+  document.addEventListener('click',e=>{ if(e.target.closest('a,kbd'))return; const x=e.clientX/window.innerWidth; show(x>0.5?i+1:i-1); });
+})();
+</script>
+</body>
+</html>
