@@ -1,0 +1,9 @@
+$ErrorActionPreference='Stop'
+$Repo='C:\Users\aaron\Desktop\URAP';$Run=Join-Path $Repo 'artifacts\detached_nps_consensus_sweep_v19';$StatePath=Join-Path $Run 'state.json'
+if(-not(Test-Path $StatePath)){Write-Host 'status: NOT RUNNING';Write-Host 'done/total: 0/7';exit 0}
+$State=Get-Content $StatePath -Raw|ConvertFrom-Json;$Process=Get-CimInstance Win32_Process -Filter "ProcessId=$($State.pid)" -ErrorAction SilentlyContinue
+$Progress=if(Test-Path $State.progress){Get-Content $State.progress -Raw|ConvertFrom-Json}else{$null}
+$ChildId=if($Progress -and $Progress.child_pid){[int]$Progress.child_pid}else{0}
+$Children=@(Get-CimInstance Win32_Process|Where-Object{($_.ProcessId -eq $ChildId -or $_.ParentProcessId -eq $ChildId) -and $_.CommandLine -like '*sweep_tvd_predictionsgt_score_fusion.py*'})
+$Paths=@($State.stdout,$State.stderr,$State.progress)|Where-Object{Test-Path $_};$Latest=$Paths|ForEach-Object{Get-Item $_}|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+Write-Host ("status: "+$(if($Process){'RUNNING'}else{'NOT RUNNING'}));Write-Host ("done/total: "+$(if($Progress){"$($Progress.done)/$($Progress.total)"}else{'0/7'}));Write-Host ("stage: "+$(if($Progress){$Progress.stage}else{'starting'}));Write-Host "pid: $($State.pid)";Write-Host "start_time: $($State.start_time)";if($Process){Write-Host "command: $($Process.CommandLine)"};if(@($Children).Length){Write-Host "child_pid: $($Children[0].ProcessId)";Write-Host "child_command: $($Children[0].CommandLine)"}else{Write-Host 'child_pid: none'};Write-Host ("last_output_timestamp: "+$(if($Latest){$Latest.LastWriteTime}else{'none'}));Write-Host ("last_completed_unit: "+$(if($Progress){$Progress|ConvertTo-Json -Compress}else{'none'}));Write-Host "stdout: $($State.stdout)";Write-Host "stderr: $($State.stderr)";Write-Host "progress: $($State.progress)"

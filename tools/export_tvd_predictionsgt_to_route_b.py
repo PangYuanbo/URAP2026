@@ -22,6 +22,10 @@ def parse_image_id(image_id: str) -> tuple[str, int]:
 def image_path_for(frame_root: Path | None, image_id: str) -> str:
     if frame_root is None:
         return f"{image_id}.png"
+    for suffix in (".png", ".jpg", ".jpeg", ".bmp"):
+        candidate = frame_root / f"{image_id}{suffix}"
+        if candidate.is_file():
+            return str(candidate.resolve())
     return str((frame_root / f"{image_id}.png").resolve())
 
 

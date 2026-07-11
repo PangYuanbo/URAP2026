@@ -131,22 +131,34 @@
 
     .canvas-wrap {
       min-height: 360px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+      gap: 10px;
       overflow: auto;
       background: #050606;
       border: 1px solid var(--line);
       border-radius: 8px;
+      padding: 10px;
+    }
+
+    .canvas-wrap.single-view { grid-template-columns: minmax(0, 1fr); }
+    .view-panel { min-width: 0; display: grid; gap: 6px; }
+    .view-panel.hidden { display: none; }
+    .view-title { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; }
+    .view-title b { color: var(--text); font-size: 13px; }
+    .canvas-frame { display: flex; align-items: center; justify-content: center; min-height: 320px; overflow: auto; background: #050606; border: 1px solid var(--line); border-radius: 6px; }
     }
 
     canvas {
       max-width: 100%;
       height: auto;
-      cursor: crosshair;
       display: block;
       background: #050606;
     }
+
+    #rgbCanvas { cursor: crosshair; }
+    #flowCanvas { cursor: default; }
 
     aside {
       border-left: 1px solid var(--line);
@@ -335,7 +347,7 @@
 <body>
   <section class="directory" aria-label="URAP2026 directory">
     <div>
-      <h1>URAP2026</h1>
+      <h1>URAP26</h1>
       <p>Select a workspace to open.</p>
     </div>
     <div class="directory-grid">
@@ -357,43 +369,47 @@
   <div class="app">
     <header>
       <h1>Frame Annotator</h1>
-      <a class="nav-link" href="/">Directory</a>
+      <a class="nav-link" href="/?view=directory">Directory</a>
       <a class="nav-link" href="/yolomg-motion/">YOLOMG Gallery</a>
       <a class="nav-link" href="/nps-motion/">NPS Motion</a>
       <div class="field">
-        <label for="videoFile">video</label>
-        <input id="videoFile" type="file" accept="video/*" />
+        <label for="rgbVideoFile">RGB Video</label>
+        <input id="rgbVideoFile" type="file" accept="video/*" />
       </div>
       <div class="field">
-        <label for="jsonFile">import json</label>
+        <label for="flowVideoFile">Optical Flow Video</label>
+        <input id="flowVideoFile" type="file" accept="video/*" />
+      </div>
+      <div class="field">
+        <label for="jsonFile">Import JSON</label>
         <input id="jsonFile" type="file" accept="application/json,.json" />
       </div>
       <div class="field">
-        <label for="fpsInput">fps</label>
+        <label for="fpsInput">FPS</label>
         <input id="fpsInput" type="number" min="1" step="0.001" value="29.97" />
       </div>
       <div class="field">
-        <label for="stepInput">step</label>
+        <label for="stepInput">Frame Step</label>
         <input id="stepInput" type="number" min="1" step="1" value="5" />
       </div>
       <div class="field">
-        <label for="startInput">start frame</label>
+        <label for="startInput">Start Frame</label>
         <input id="startInput" class="short" type="number" min="0" step="1" value="0" />
       </div>
       <div class="field">
-        <label for="endInput">end frame</label>
+        <label for="endInput">End Frame</label>
         <input id="endInput" class="short" type="number" min="0" step="1" placeholder="auto" />
       </div>
       <div class="field">
-        <label for="workerInput">annotator</label>
+        <label for="workerInput">Annotator</label>
         <input id="workerInput" class="short" type="text" placeholder="name" />
       </div>
       <div class="field">
-        <label for="apiInput">api url</label>
+        <label for="apiInput">API URL</label>
         <input id="apiInput" type="url" placeholder="https://api.up.railway.app" value="https://urap2026annotation-api-production.up.railway.app" />
       </div>
       <div class="field">
-        <label for="taskInput">task id</label>
+        <label for="taskInput">Task ID</label>
         <input id="taskInput" class="short" type="text" placeholder="optional" />
       </div>
       <button id="exportBtn" class="primary" disabled>Export JSON</button>
@@ -404,30 +420,40 @@
     <main>
       <section class="stage">
         <div class="row">
-          <button id="prevBtn" disabled>Prev</button>
-          <button id="todoBtn" disabled>Next Todo</button>
+          <button id="prevBtn" disabled>Previous</button>
+          <button id="todoBtn" disabled>Next Unlabeled</button>
           <button id="skipBtn" class="warn" disabled>Skip</button>
           <button id="nextBtn" disabled>Next</button>
           <button id="undoBtn" disabled>Undo Box</button>
+          <button id="showBothBtn" disabled>Zoom Out / Dual View</button>
+          <button id="showRgbBtn" disabled>Enlarge RGB</button>
+          <button id="showFlowBtn" disabled>Enlarge Flow</button>
           <div class="field">
-            <label for="classInput">class</label>
+            <label for="classInput">Class</label>
             <select id="classInput">
-              <option value="drone">drone</option>
-              <option value="ground_object">ground_object</option>
+              <option value="drone">Drone</option>
+              <option value="ground_object">Ground Object</option>
             </select>
           </div>
           <label class="row">
             <input id="autoAdvanceInput" type="checkbox" checked />
-            auto next after box
+            Auto-advance after drawing a box
           </label>
           <label class="row">
             <input id="oneBoxInput" type="checkbox" checked />
-            one box per frame
+            One box per frame
           </label>
         </div>
 
-        <div class="canvas-wrap">
-          <canvas id="canvas" width="1280" height="720"></canvas>
+        <div class="canvas-wrap" id="canvasWrap">
+          <section class="view-panel" id="rgbPanel">
+            <div class="view-title"><b>RGB (Annotate Here)</b><span>Drag to draw</span></div>
+            <div class="canvas-frame"><canvas id="rgbCanvas" width="1280" height="720"></canvas></div>
+          </section>
+          <section class="view-panel" id="flowPanel">
+            <div class="view-title"><b>Optical Flow (Drone Search Aid)</b><span>View only</span></div>
+            <div class="canvas-frame"><canvas id="flowCanvas" width="1280" height="720"></canvas></div>
+          </section>
         </div>
 
         <div>
@@ -453,6 +479,9 @@
           <div><b>B</b>: previous frame</div>
           <div><b>S</b>: skip frame</div>
           <div><b>U</b>: undo last box</div>
+          <div><b>1</b>: enlarge RGB</div>
+          <div><b>2</b>: enlarge optical flow</div>
+          <div><b>0</b>: restore dual view</div>
           <div><b>E</b>: export JSON</div>
         </div>
         <div class="anno-list" id="annoList"></div>
@@ -460,16 +489,18 @@
     </main>
   </div>
 
-  <video id="video" preload="auto" muted playsinline></video>
+  <video id="rgbVideo" preload="auto" muted playsinline></video>
+  <video id="flowVideo" preload="auto" muted playsinline></video>
 
   <script>
     const params = new URLSearchParams(window.location.search);
-    if (params.get("view") === "annotator" || window.location.hash === "#annotator") {
+    if (params.get("view") !== "directory") {
       document.body.classList.add("show-annotator");
     }
 
     const els = {
-      videoFile: document.getElementById("videoFile"),
+      rgbVideoFile: document.getElementById("rgbVideoFile"),
+      flowVideoFile: document.getElementById("flowVideoFile"),
       jsonFile: document.getElementById("jsonFile"),
       fpsInput: document.getElementById("fpsInput"),
       stepInput: document.getElementById("stepInput"),
@@ -486,6 +517,9 @@
       skipBtn: document.getElementById("skipBtn"),
       nextBtn: document.getElementById("nextBtn"),
       undoBtn: document.getElementById("undoBtn"),
+      showBothBtn: document.getElementById("showBothBtn"),
+      showRgbBtn: document.getElementById("showRgbBtn"),
+      showFlowBtn: document.getElementById("showFlowBtn"),
       classInput: document.getElementById("classInput"),
       autoAdvanceInput: document.getElementById("autoAdvanceInput"),
       oneBoxInput: document.getElementById("oneBoxInput"),
@@ -498,15 +532,24 @@
       boxesStat: document.getElementById("boxesStat"),
       remainingStat: document.getElementById("remainingStat"),
       annoList: document.getElementById("annoList"),
-      canvas: document.getElementById("canvas"),
-      video: document.getElementById("video"),
+      canvasWrap: document.getElementById("canvasWrap"),
+      rgbPanel: document.getElementById("rgbPanel"),
+      flowPanel: document.getElementById("flowPanel"),
+      rgbCanvas: document.getElementById("rgbCanvas"),
+      flowCanvas: document.getElementById("flowCanvas"),
+      rgbVideo: document.getElementById("rgbVideo"),
+      flowVideo: document.getElementById("flowVideo"),
     };
 
-    const ctx = els.canvas.getContext("2d");
+    const rgbCtx = els.rgbCanvas.getContext("2d");
+    const flowCtx = els.flowCanvas.getContext("2d");
 
     const state = {
       videoName: "",
       videoUrl: "",
+      flowVideoName: "",
+      flowVideoUrl: "",
+      flowReady: false,
       videoWidth: 0,
       videoHeight: 0,
       totalFrames: 0,
@@ -546,9 +589,10 @@
     }
 
     function setEnabled(enabled) {
-      for (const key of ["exportBtn", "submitBtn", "clearBtn", "prevBtn", "todoBtn", "skipBtn", "nextBtn", "undoBtn", "saveDraftBtn", "loadDraftBtn"]) {
+      for (const key of ["exportBtn", "submitBtn", "clearBtn", "prevBtn", "todoBtn", "skipBtn", "nextBtn", "undoBtn", "saveDraftBtn", "loadDraftBtn", "showBothBtn", "showRgbBtn"]) {
         els[key].disabled = !enabled;
       }
+      els.showFlowBtn.disabled = !enabled || !state.flowReady;
     }
 
     function buildTargetFrames() {
@@ -578,22 +622,27 @@
       els.progressBar.style.width = state.targetFrames.length ? `${Math.min(100, (done / state.targetFrames.length) * 100)}%` : "0%";
 
       const seconds = frameId / fps();
+      const flowStatus = state.flowReady ? ` | flow ${state.flowVideoName}` : " | flow not loaded";
       els.status.textContent = state.videoName
-        ? `${state.videoName} | target ${state.targetIndex + 1}/${state.targetFrames.length} | frame ${frameId} | ${seconds.toFixed(3)}s`
-        : "Load a video to start.";
+        ? `${state.videoName}${flowStatus} | target ${state.targetIndex + 1}/${state.targetFrames.length} | frame ${frameId} | ${seconds.toFixed(3)}s`
+        : "Load an RGB video to start.";
     }
 
     function redraw(extraBox = null) {
-      ctx.clearRect(0, 0, els.canvas.width, els.canvas.height);
+      rgbCtx.clearRect(0, 0, els.rgbCanvas.width, els.rgbCanvas.height);
+      flowCtx.clearRect(0, 0, els.flowCanvas.width, els.flowCanvas.height);
       if (!state.videoName) {
-        ctx.fillStyle = "#050606";
-        ctx.fillRect(0, 0, els.canvas.width, els.canvas.height);
-        ctx.fillStyle = "#9aa3a8";
-        ctx.font = "24px system-ui";
-        ctx.fillText("Load a video to start", 32, 56);
+        rgbCtx.fillStyle = "#050606";
+        rgbCtx.fillRect(0, 0, els.rgbCanvas.width, els.rgbCanvas.height);
+        rgbCtx.fillStyle = "#9aa3a8";
+        rgbCtx.font = "24px system-ui";
+        rgbCtx.fillText("Load an RGB video to start", 32, 56);
+        drawFlowPlaceholder("Load an optical flow video");
         return;
       }
-      ctx.drawImage(els.video, 0, 0, els.canvas.width, els.canvas.height);
+      rgbCtx.drawImage(els.rgbVideo, 0, 0, els.rgbCanvas.width, els.rgbCanvas.height);
+      if (state.flowReady) flowCtx.drawImage(els.flowVideo, 0, 0, els.flowCanvas.width, els.flowCanvas.height);
+      else drawFlowPlaceholder("Optical flow video not loaded");
       const frameId = currentFrame();
       const saved = annotationFor(frameId);
       const boxes = saved ? saved.boxes : state.currentBoxes;
@@ -603,24 +652,32 @@
       if (extraBox) drawBox(extraBox, true);
     }
 
+    function drawFlowPlaceholder(message) {
+      flowCtx.fillStyle = "#050606";
+      flowCtx.fillRect(0, 0, els.flowCanvas.width, els.flowCanvas.height);
+      flowCtx.fillStyle = "#9aa3a8";
+      flowCtx.font = "24px system-ui";
+      flowCtx.fillText(message, 32, 56);
+    }
+
     function drawBox(box, preview) {
-      const sx = els.canvas.width / state.videoWidth;
-      const sy = els.canvas.height / state.videoHeight;
+      const sx = els.rgbCanvas.width / state.videoWidth;
+      const sy = els.rgbCanvas.height / state.videoHeight;
       const x = box.x1 * sx;
       const y = box.y1 * sy;
       const w = (box.x2 - box.x1) * sx;
       const h = (box.y2 - box.y1) * sy;
       const color = box.class === "ground_object" ? "#f6bd3d" : "#27d35f";
-      ctx.strokeStyle = color;
-      ctx.lineWidth = preview ? 2 : 3;
-      ctx.strokeRect(x, y, w, h);
-      ctx.fillStyle = color;
-      ctx.font = "16px system-ui";
+      rgbCtx.strokeStyle = color;
+      rgbCtx.lineWidth = preview ? 2 : 3;
+      rgbCtx.strokeRect(x, y, w, h);
+      rgbCtx.fillStyle = color;
+      rgbCtx.font = "16px system-ui";
       const label = box.class;
-      const textWidth = ctx.measureText(label).width + 10;
-      ctx.fillRect(x, Math.max(0, y - 24), textWidth, 22);
-      ctx.fillStyle = "#0b0d0e";
-      ctx.fillText(label, x + 5, Math.max(16, y - 7));
+      const textWidth = rgbCtx.measureText(label).width + 10;
+      rgbCtx.fillRect(x, Math.max(0, y - 24), textWidth, 22);
+      rgbCtx.fillStyle = "#0b0d0e";
+      rgbCtx.fillText(label, x + 5, Math.max(16, y - 7));
     }
 
     function renderList() {
@@ -635,19 +692,19 @@
     }
 
     function canvasPoint(event) {
-      const rect = els.canvas.getBoundingClientRect();
-      const x = (event.clientX - rect.left) * (els.canvas.width / rect.width);
-      const y = (event.clientY - rect.top) * (els.canvas.height / rect.height);
+      const rect = els.rgbCanvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * (els.rgbCanvas.width / rect.width);
+      const y = (event.clientY - rect.top) * (els.rgbCanvas.height / rect.height);
       return { x, y };
     }
 
     function canvasToSource(box) {
-      const sx = state.videoWidth / els.canvas.width;
-      const sy = state.videoHeight / els.canvas.height;
+      const sx = state.videoWidth / els.rgbCanvas.width;
+      const sy = state.videoHeight / els.rgbCanvas.height;
       const x1 = Math.max(0, Math.min(box.x1, box.x2)) * sx;
       const y1 = Math.max(0, Math.min(box.y1, box.y2)) * sy;
-      const x2 = Math.min(els.canvas.width, Math.max(box.x1, box.x2)) * sx;
-      const y2 = Math.min(els.canvas.height, Math.max(box.y1, box.y2)) * sy;
+      const x2 = Math.min(els.rgbCanvas.width, Math.max(box.x1, box.x2)) * sx;
+      const y2 = Math.min(els.rgbCanvas.height, Math.max(box.y1, box.y2)) * sy;
       return {
         class: els.classInput.value,
         x1: Number(x1.toFixed(3)),
@@ -658,18 +715,36 @@
     }
 
     async function seekToFrame(frameId) {
+      const time = frameId / fps();
+      const seeks = [seekVideo(els.rgbVideo, time)];
+      if (state.flowReady) seeks.push(seekVideo(els.flowVideo, time));
+      await Promise.all(seeks);
+      state.currentBoxes = annotationFor(frameId)?.boxes.map((box) => ({ ...box })) ?? [];
+      redraw();
+      updateStats();
+      renderList();
+    }
+
+    function seekVideo(video, time) {
+      const target = Math.min(video.duration || 0, time);
+      if (Math.abs(video.currentTime - target) < 0.0005 && video.readyState >= 2) return Promise.resolve();
       return new Promise((resolve) => {
         const onSeeked = () => {
-          els.video.removeEventListener("seeked", onSeeked);
-          state.currentBoxes = annotationFor(frameId)?.boxes.map((box) => ({ ...box })) ?? [];
-          redraw();
-          updateStats();
-          renderList();
+          video.removeEventListener("seeked", onSeeked);
           resolve();
         };
-        els.video.addEventListener("seeked", onSeeked);
-        els.video.currentTime = Math.min(els.video.duration || 0, frameId / fps());
+        video.addEventListener("seeked", onSeeked);
+        video.currentTime = target;
       });
+    }
+
+    function setViewMode(mode) {
+      els.rgbPanel.classList.toggle("hidden", mode === "flow");
+      els.flowPanel.classList.toggle("hidden", mode === "rgb");
+      els.canvasWrap.classList.toggle("single-view", mode !== "both");
+      els.showBothBtn.classList.toggle("primary", mode === "both");
+      els.showRgbBtn.classList.toggle("primary", mode === "rgb");
+      els.showFlowBtn.classList.toggle("primary", mode === "flow");
     }
 
     function upsertCurrentAnnotation() {
@@ -832,8 +907,8 @@
       await goNextTodo();
     }
 
-    els.videoFile.addEventListener("change", async () => {
-      const file = els.videoFile.files[0];
+    els.rgbVideoFile.addEventListener("change", async () => {
+      const file = els.rgbVideoFile.files[0];
       if (!file) return;
       if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
       state.videoName = file.name;
@@ -842,16 +917,33 @@
       state.skippedFrames = new Set();
       state.targetIndex = 0;
       state.draftKey = `frame-annotator:${state.videoName}`;
-      els.video.src = state.videoUrl;
-      await new Promise((resolve) => els.video.addEventListener("loadedmetadata", resolve, { once: true }));
-      state.videoWidth = els.video.videoWidth;
-      state.videoHeight = els.video.videoHeight;
-      state.totalFrames = Math.max(1, Math.floor(els.video.duration * fps()));
-      els.canvas.width = 1280;
-      els.canvas.height = Math.round(1280 * state.videoHeight / state.videoWidth);
+      els.rgbVideo.src = state.videoUrl;
+      await new Promise((resolve) => els.rgbVideo.addEventListener("loadedmetadata", resolve, { once: true }));
+      state.videoWidth = els.rgbVideo.videoWidth;
+      state.videoHeight = els.rgbVideo.videoHeight;
+      state.totalFrames = Math.max(1, Math.floor(els.rgbVideo.duration * fps()));
+      els.rgbCanvas.width = 1280;
+      els.rgbCanvas.height = Math.round(1280 * state.videoHeight / state.videoWidth);
+      els.flowCanvas.width = els.rgbCanvas.width;
+      els.flowCanvas.height = els.rgbCanvas.height;
       buildTargetFrames();
       setEnabled(true);
       await seekToFrame(0);
+    });
+
+    els.flowVideoFile.addEventListener("change", async () => {
+      const file = els.flowVideoFile.files[0];
+      if (!file) return;
+      if (state.flowVideoUrl) URL.revokeObjectURL(state.flowVideoUrl);
+      state.flowVideoName = file.name;
+      state.flowVideoUrl = URL.createObjectURL(file);
+      state.flowReady = false;
+      els.flowVideo.src = state.flowVideoUrl;
+      await new Promise((resolve) => els.flowVideo.addEventListener("loadedmetadata", resolve, { once: true }));
+      state.flowReady = true;
+      els.showFlowBtn.disabled = !state.videoName;
+      if (state.videoName) await seekToFrame(currentFrame());
+      else redraw();
     });
 
     els.jsonFile.addEventListener("change", () => {
@@ -875,18 +967,18 @@
 
     els.fpsInput.addEventListener("change", async () => {
       if (!state.videoName) return;
-      state.totalFrames = Math.max(1, Math.floor(els.video.duration * fps()));
+      state.totalFrames = Math.max(1, Math.floor(els.rgbVideo.duration * fps()));
       buildTargetFrames();
       await goToIndex(0);
     });
 
-    els.canvas.addEventListener("mousedown", (event) => {
+    els.rgbCanvas.addEventListener("mousedown", (event) => {
       if (!state.videoName) return;
       const start = canvasPoint(event);
       state.drawing = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
     });
 
-    els.canvas.addEventListener("mousemove", (event) => {
+    els.rgbCanvas.addEventListener("mousemove", (event) => {
       if (!state.drawing) return;
       const point = canvasPoint(event);
       state.drawing.x2 = point.x;
@@ -895,7 +987,7 @@
       redraw(sourceBox);
     });
 
-    els.canvas.addEventListener("mouseup", async () => {
+    els.rgbCanvas.addEventListener("mouseup", async () => {
       if (!state.drawing) return;
       const sourceBox = canvasToSource(state.drawing);
       state.drawing = null;
@@ -934,6 +1026,11 @@
       updateStats();
       renderList();
     });
+    els.showBothBtn.addEventListener("click", () => setViewMode("both"));
+    els.showRgbBtn.addEventListener("click", () => setViewMode("rgb"));
+    els.showFlowBtn.addEventListener("click", () => {
+      if (state.flowReady) setViewMode("flow");
+    });
     els.exportBtn.addEventListener("click", exportJson);
     els.submitBtn.addEventListener("click", async () => {
       try {
@@ -963,9 +1060,15 @@
       if (key === "s") els.skipBtn.click();
       if (key === "u") els.undoBtn.click();
       if (key === "e" && state.videoName) exportJson();
+      if (key === "0") els.showBothBtn.click();
+      if (key === "1") els.showRgbBtn.click();
+      if (key === "2") els.showFlowBtn.click();
     });
 
+    setViewMode("both");
     redraw();
   </script>
 </body>
 </html>
+
+

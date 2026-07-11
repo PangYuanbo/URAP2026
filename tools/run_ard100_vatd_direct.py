@@ -1,0 +1,12 @@
+from __future__ import annotations
+import json,os,subprocess,sys
+from datetime import datetime
+from pathlib import Path
+R=Path(r'C:\Users\aaron\Desktop\URAP');RUN=R/'artifacts'/'detached_ard100_vatd_direct_v1';P=RUN/'progress.json';O=Path(r'D:\URAP_vatd_rank_results\ard100_yolomg_generalization_v2');T=O/'vatd_tracklets'/'proposal_tracklets.jsonl';S=O/'vatd_direct_scores.jsonl';A=O/'vatd_direct_attached.jsonl';W=R/'artifacts'/'ego_adaptive_vatd'/'nps_train_full_u_epoch1_noshuffle_20260606'/'ego_adaptive_vatd.pt';FR=Path(r'D:\URAP_datasets\TransVisDrone\ARD100\AllFrames\test')
+def rep(s,d,**x):RUN.mkdir(parents=True,exist_ok=True);P.write_text(json.dumps({'stage':s,'done':d,'total':3,'updated':datetime.now().astimezone().isoformat(),**x},indent=2));print(s,flush=True)
+def go(s,d,a):
+ q=subprocess.Popen(a,cwd=R,env={**os.environ,'PYTHONUNBUFFERED':'1','PYTHONPATH':str(R)});rep(s,d,child_pid=q.pid,command=a);c=q.wait()
+ if c:raise RuntimeError(f'{s} failed {c}')
+def main():
+ go('score_vatd',1,[sys.executable,'-m','qstr_dronedet.cli','score-ego-adaptive-vatd-tracklets','--tracklet-jsonl',str(T),'--weights',str(W),'--out',str(S),'--frame-root',str(FR),'--image-name-template','{seq}_{frame_id_05d}.jpg','--error-scale','.02','--min-tracklet-rows','9','--batch-size','512','--num-workers','0','--frame-cache-size','256','--fusion-mode','motion_action']);go('attach',2,[sys.executable,'-m','qstr_dronedet.cli','attach-vatd-scores-to-tracklets','--tracklet-jsonl',str(T),'--vatd-scores',str(S),'--out',str(A)]);go('evaluate',3,[sys.executable,str(R/'tools'/'sweep_tvd_predictionsgt_action_rescore.py'),'--tvd-root',r'D:\urap_modal_stage\TransVisDrone','--predictionsgt-pkl',str(O/'ard100_yolomg_predictionsgt.pkl'),'--tracklet-jsonl',str(A),'--score-field','vatd_score','--centers','.01','--betas','.02','--modes','boost-only','--missing-score-behaviors','keep','--out-json',str(O/'vatd_direct_fixed.json')]);vatd=json.loads((O/'vatd_direct_fixed.json').read_text())['best'];action=json.loads((O/'forward_adapt_official_summary.json').read_text())['test'];base=json.loads((O/'detector_baseline.json').read_text());summary={'protocol':'same ARD100 YOLOMG candidates; frozen NPS VATD versus ARD100-val-selected Action Bank','detector':base,'vatd':vatd,'action_bank':action,'action_over_vatd_points':100*(action['map50']-vatd['map50']),'target_3_to_5_met':.03<=action['map50']-vatd['map50']<=.05};(O/'official_adapted_comparison.json').write_text(json.dumps(summary,indent=2));rep('done',3,summary=summary);return 0
+if __name__=='__main__':raise SystemExit(main())

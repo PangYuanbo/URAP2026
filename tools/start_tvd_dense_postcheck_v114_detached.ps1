@@ -1,0 +1,5 @@
+﻿$ErrorActionPreference='Stop'
+$Run='C:\Users\aaron\Desktop\URAP\artifacts\detached_tvd_dense_postcheck_v114';$Worker='C:\Users\aaron\Desktop\URAP\tools\run_tvd_dense_postcheck_v114.ps1';New-Item -ItemType Directory -Force $Run|Out-Null;$PidFile=Join-Path $Run 'pid.txt';$Out=Join-Path $Run 'stdout_fixed.log';$Err=Join-Path $Run 'stderr_fixed.log';$Meta=Join-Path $Run 'start_meta.json'
+if(Test-Path $PidFile){$OldPid=[int](Get-Content $PidFile -Raw).Trim();$Old=Get-CimInstance Win32_Process -Filter "ProcessId=$OldPid" -ErrorAction SilentlyContinue;if($Old){Write-Output "ALREADY RUNNING PID=$OldPid";exit 0}}
+Set-Content $Out '';Set-Content $Err '';$Started=Get-Date;$P=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$Worker) -WorkingDirectory 'C:\Users\aaron\Desktop\URAP' -RedirectStandardOutput $Out -RedirectStandardError $Err -WindowStyle Hidden -PassThru;Set-Content $PidFile $P.Id;@{pid=$P.Id;start_time=$Started.ToString('o');command_line="powershell -File $Worker";stdout=$Out;stderr=$Err}|ConvertTo-Json|Set-Content $Meta;Write-Output "STARTED PID=$($P.Id) START=$($Started.ToString('o'))"
+

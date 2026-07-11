@@ -5,6 +5,24 @@ Goal (ours):
 - Run inference on-board a UAV (edge compute), so we need a design that is both accurate on tiny targets and latency/energy aware.
 - Target setting: tiny UAV / tiny obstacles in complex "below-the-horizon" urban backgrounds (buildings, edges, windows, wires), not only open sky.
 
+## 2026-06-23 Direction Update: SAMURAI-Style Motion-Aware Memory
+
+The current main R&D direction is now the SAMURAI-style motion-aware memory route:
+
+```text
+detector candidates
+  -> motion prediction / Kalman-style consistency
+  -> selective clean-memory write gate
+  -> memory-guided rescoring and zoom re-detection
+  -> hard-reset stale-memory correction
+```
+
+This does not mean copying SAM 2 wholesale. The transferable idea is motion-aware
+memory selection: only high-quality observations should condition future frames.
+For the detailed plan, see:
+
+`doc/samurai_motion_memory_research_direction_2026_06_23.md`
+
 ## What The Current Baselines Actually Do
 
 ### TransVisDrone (ICRA 2023)
@@ -119,4 +137,3 @@ This is enough to feed into:
    - top-K ROI crops at higher effective resolution
    - merge + track association
 4) Add an EDTC-like switch policy (confidence + uncertainty proxy) to decide when to run ROI detector.
-

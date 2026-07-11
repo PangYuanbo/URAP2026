@@ -1,7 +1,8 @@
-import argparse
+﻿import argparse
 import glob
 import os
 import pickle
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
@@ -45,6 +46,38 @@ def safe_ints_from_csv_line(line: str) -> List[int]:
     # strip spaces; allow stray commas.
     items = [x.strip() for x in line.strip().split(",") if x.strip() != ""]
     return [int(x) for x in items]
+
+
+def parse_annotation_line(line: str) -> Tuple[int, List[Tuple[int, int, int, int]]]:
+    time_layer_match = re.match(r"^time_layer:\s*(\d+)\s+detections:\s*(.*)$", line)
+    if time_layer_match:
+        frame_no = int(time_layer_match.group(1)) - 1
+        bboxes = [
+            (x1, y1, x2, y2)
+            for y1, x1, y2, x2 in (
+                tuple(int(value) for value in match)
+                for match in re.findall(
+                    r"\((-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\)",
+                    time_layer_match.group(2),
+                )
+            )
+        ]
+        return frame_no, bboxes
+
+    parts = safe_ints_from_csv_line(line)
+    if len(parts) < 2:
+        raise ValueError(f"Invalid annotation line: {line!r}")
+    frame_no = int(parts[0])
+    num_obj = int(parts[1])
+    coords = parts[2:]
+    if num_obj < 0 or len(coords) != 4 * num_obj:
+        raise ValueError(
+            f"Invalid object count: frame={frame_no}, objects={num_obj}, coords={len(coords)}"
+        )
+    return frame_no, [
+        tuple(coords[offset : offset + 4])
+        for offset in range(0, 4 * num_obj, 4)
+    ]
 
 
 def bboxes_to_yolo_lines(
@@ -197,29 +230,17 @@ def write_yolo_labels_for_clip(
             line = raw.strip()
             if not line:
                 continue
-            parts = safe_ints_from_csv_line(line)
-            if len(parts) < 2:
-                continue
-            frame_no = int(parts[0])  # 0-indexed
-            num_obj = int(parts[1])
-            coords = parts[2:]
-            if num_obj <= 0:
+            try:
+                frame_no, bboxes = parse_annotation_line(line)
+            except ValueError as error:
+                raise RuntimeError(f"Bad annotation row in {anno_path}: {raw!r}") from error
+            if not bboxes:
                 # Create an empty file to explicitly mark as no-target frame.
                 out_txt = os.path.join(labels_dir, f"Clip_{clip_id}_{frame_no:05d}.txt")
                 if not os.path.exists(out_txt):
                     open(out_txt, "w", encoding="utf-8").close()
                     written += 1
                 continue
-            if len(coords) != num_obj * 4:
-                raise RuntimeError(
-                    f"Bad annotation row in {anno_path}: {raw!r} "
-                    f"(num_obj={num_obj}, coords={len(coords)})"
-                )
-            bboxes: List[Tuple[int, int, int, int]] = []
-            for i in range(num_obj):
-                x1, y1, x2, y2 = coords[i * 4 : i * 4 + 4]
-                bboxes.append((int(x1), int(y1), int(x2), int(y2)))
-
             yolo_lines = bboxes_to_yolo_lines(bboxes, img_w=img_w, img_h=img_h)
             out_txt = os.path.join(labels_dir, f"Clip_{clip_id}_{frame_no:05d}.txt")
             with open(out_txt, "w", encoding="utf-8") as out:
@@ -326,7 +347,15 @@ def main() -> None:
             split_to_lens[split.name][clip_id] = int(n_frames)
 
             # Write labels (from Dogfight annotations).
-            anno_path = os.path.join(annos_dir, f"Clip_{clip_id:03d}.txt")
+            anno_candidates = [
+                os.path.join(annos_dir, f"Clip_{clip_id:03d}.txt"),
+                os.path.join(annos_dir, f"Clip_{clip_id}_gt.txt"),
+                os.path.join(annos_dir, f"Clip_{clip_id:03d}_gt.txt"),
+            ]
+            anno_path = next(
+                (path for path in anno_candidates if os.path.exists(path)),
+                anno_candidates[0],
+            )
             write_yolo_labels_for_clip(
                 anno_path=anno_path,
                 labels_dir=labels_dir,
@@ -348,3 +377,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+

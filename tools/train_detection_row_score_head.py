@@ -42,6 +42,14 @@ TRACKLET_FEATURES = [
     "mean_vatd_action_residual_center_error",
     "median_vatd_action_residual_center_error",
     "num_action_windows",
+    "action_bank_score",
+    "mean_action_bank_predicted_iou",
+    "mean_action_bank_velocity_similarity",
+    "mean_action_bank_direction_similarity",
+    "mean_action_bank_scale_similarity",
+    "num_action_bank_windows",
+    "action_bank_learned_score",
+    "num_action_bank_learned_windows",
 ]
 
 ROW_FEATURES = [
@@ -53,6 +61,20 @@ ROW_FEATURES = [
     "vatd_action_consistency_score",
     "mean_vatd_action_residual_center_error",
     "median_vatd_action_residual_center_error",
+    "action_bank_score",
+    "action_bank_predicted_iou",
+    "action_bank_velocity_similarity",
+    "action_bank_direction_similarity",
+    "action_bank_scale_similarity",
+    "action_bank_learned_score",
+    "action_bank_motion_probability",
+    "action_bank_future_consistency",
+    "action_bank_reliability",
+    "samurai_cmc_score",
+    "samurai_cmc_forward_iou",
+    "samurai_cmc_backward_iou",
+    "samurai_cmc_residual_speed",
+    "samurai_cmc_camera_validity",
 ]
 
 EXTRA_FEATURES = [
@@ -85,6 +107,20 @@ def named_feature_group_indices() -> dict[str, list[int]]:
                 "vatd_action_consistency_score",
                 "mean_vatd_action_residual_center_error",
                 "median_vatd_action_residual_center_error",
+                "action_bank_score",
+                "action_bank_predicted_iou",
+                "action_bank_velocity_similarity",
+                "action_bank_direction_similarity",
+                "action_bank_scale_similarity",
+                "action_bank_learned_score",
+                "action_bank_motion_probability",
+                "action_bank_future_consistency",
+                "action_bank_reliability",
+                "samurai_cmc_score",
+                "samurai_cmc_forward_iou",
+                "samurai_cmc_backward_iou",
+                "samurai_cmc_residual_speed",
+                "samurai_cmc_camera_validity",
             ]
         ],
         "box_geometry": [extra[name] for name in ["cx_norm", "cy_norm", "w_norm", "h_norm", "area_norm", "aspect_ratio", "row_index_norm"]],
@@ -141,6 +177,14 @@ def named_feature_group_indices() -> dict[str, list[int]]:
                 "mean_vatd_action_residual_center_error",
                 "median_vatd_action_residual_center_error",
                 "num_action_windows",
+                "action_bank_score",
+                "mean_action_bank_predicted_iou",
+                "mean_action_bank_velocity_similarity",
+                "mean_action_bank_direction_similarity",
+                "mean_action_bank_scale_similarity",
+                "num_action_bank_windows",
+                "action_bank_learned_score",
+                "num_action_bank_learned_windows",
             ]
         ],
     }
@@ -451,6 +495,7 @@ def main() -> int:
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--pairwise-weight", type=float, default=0.0)
     parser.add_argument("--pairwise-pairs", type=int, default=8192)
+    parser.add_argument("--hard-pairwise-fraction", type=float, default=0.0)
     parser.add_argument("--model-kind", choices=["mlp", "unified-two-tower"], default="mlp")
     parser.add_argument("--tracklet-aux-weight", type=float, default=0.0)
     parser.add_argument("--feature-groups", nargs="+", default=["all"])
@@ -526,15 +571,30 @@ def main() -> int:
                 neg_idx = torch.where(by <= 0.5)[0]
                 if pos_idx.numel() and neg_idx.numel():
                     pair_count = min(int(args.pairwise_pairs), int(pos_idx.numel()) * int(neg_idx.numel()))
-                    pos_pick = pos_idx[torch.randint(pos_idx.numel(), (pair_count,), device=device)]
-                    neg_pick = neg_idx[torch.randint(neg_idx.numel(), (pair_count,), device=device)]
+                    hard_fraction = min(1.0, max(0.0, float(args.hard_pairwise_fraction)))
+                    hard_count = int(round(pair_count * hard_fraction))
+                    random_count = pair_count - hard_count
+                    pos_parts = []
+                    neg_parts = []
+                    if random_count:
+                        pos_parts.append(pos_idx[torch.randint(pos_idx.numel(), (random_count,), device=device)])
+                        neg_parts.append(neg_idx[torch.randint(neg_idx.numel(), (random_count,), device=device)])
+                    if hard_count:
+                        hard_pos_pool = pos_idx[torch.topk(-logits[pos_idx].detach(), min(pos_idx.numel(), 1024)).indices]
+                        hard_neg_pool = neg_idx[torch.topk(logits[neg_idx].detach(), min(neg_idx.numel(), 4096)).indices]
+                        pos_parts.append(hard_pos_pool[torch.randint(hard_pos_pool.numel(), (hard_count,), device=device)])
+                        neg_parts.append(hard_neg_pool[torch.randint(hard_neg_pool.numel(), (hard_count,), device=device)])
+                    pos_pick = torch.cat(pos_parts)
+                    neg_pick = torch.cat(neg_parts)
                     pair_loss = torch.nn.functional.softplus(-(logits[pos_pick] - logits[neg_pick])).mean()
                     loss = loss + float(args.pairwise_weight) * pair_loss
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
             losses.append(float(loss.detach().cpu()))
-        history.append({"epoch": float(epoch), "loss": float(np.mean(losses))})
+        epoch_result = {"epoch": float(epoch), "loss": float(np.mean(losses))}
+        history.append(epoch_result)
+        print(json.dumps({"kind": "row_score_train_progress", "epoch": epoch, "epochs": args.epochs, "loss": epoch_result["loss"], "device": str(device)}), flush=True)
 
     model.eval()
     chunks = []
@@ -583,6 +643,7 @@ def main() -> int:
         "label_policy": args.label_policy,
         "pairwise_weight": float(args.pairwise_weight),
         "pairwise_pairs": int(args.pairwise_pairs),
+        "hard_pairwise_fraction": float(args.hard_pairwise_fraction),
         "model_kind": args.model_kind,
         "tracklet_aux_weight": float(args.tracklet_aux_weight),
         "feature_groups": resolved_feature_groups,

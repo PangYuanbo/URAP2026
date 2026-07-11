@@ -1,0 +1,19 @@
+﻿from __future__ import annotations
+import json, subprocess, sys
+from datetime import datetime
+from pathlib import Path
+ROOT=Path(r"C:\Users\aaron\Desktop\URAP"); RUN=ROOT/"artifacts"/"detached_tvd_neighbor_lambdarank_v124"; OUT=Path(r"D:\URAP_vatd_rank_results\tvd_neighbor_lambdarank_v124"); FULL=Path(r"D:\URAP_vatd_rank_results\action_chunk_full_dev_v36"); NEIGHBOR=Path(r"D:\URAP_vatd_rank_results\action_chunk_neighbor_v44"); FIELD="action_chunk_neighbor_lambdarank_score"; VATD=.93844
+def report(stage,done,total=3,**extra):
+ RUN.mkdir(parents=True,exist_ok=True); payload={"stage":stage,"done":done,"total":total,"updated":datetime.now().astimezone().isoformat(),**extra}; (RUN/"progress.json").write_text(json.dumps(payload,indent=2),encoding="utf8"); print(json.dumps(payload),flush=True)
+def execute(stage,done,command):
+ process=subprocess.Popen(command,cwd=ROOT); report(stage,done,child_pid=process.pid,command=command); code=process.wait()
+ if code: raise RuntimeError(f"{stage} failed with {code}")
+def main():
+ OUT.mkdir(parents=True,exist_ok=True); py=sys.executable
+ common=[py,str(ROOT/"tools"/"train_action_chunk_neighbor_lambdarank.py"),"--train-pkl",r"D:\URAP_vatd_rank_results\tvd_train_dense_candidates_v113\official_train_dense\predictionsgt\predictionsgt_split_0.pkl","--train-forward",str(FULL/"train_forward.jsonl"),"--train-backward",str(FULL/"train_backward.jsonl"),"--train-neighbor",str(NEIGHBOR/"train_neighbor_scores.jsonl"),"--val-pkl",r"D:\URAP_nps_val_tvd\runs\nps_val_rank_source\predictionsgt\predictionsgt_split_0_official_labels.pkl","--val-forward",str(FULL/"val_forward.jsonl"),"--val-backward",str(FULL/"val_backward.jsonl"),"--val-neighbor",str(NEIGHBOR/"val_neighbor_scores.jsonl"),"--test-pkl",r"D:\URAP_vatd_rank_inputs\nps_predictionsgt_split_0.pkl","--test-forward",str(FULL/"test_forward.jsonl"),"--test-backward",str(FULL/"test_backward.jsonl"),"--test-neighbor",str(NEIGHBOR/"test_neighbor_scores.jsonl"),"--sequence-size-json",str(ROOT/"data_templates"/"nps_sequence_sizes_actual.json"),"--out-val-scores",str(OUT/"val_oof_scores.jsonl"),"--out-test-scores",str(OUT/"test_scores.jsonl"),"--out-model-dir",str(OUT/"models"),"--out-summary",str(OUT/"train_summary.json"),"--score-field",FIELD]
+ execute("train_oof_lambdarank",0,common)
+ val_sweep=OUT/"val_sweep.json"; execute("select_fusion_on_oof",1,[py,str(ROOT/"tools"/"sweep_tvd_predictionsgt_score_fusion.py"),"--tvd-root",r"D:\urap_modal_stage\TransVisDrone","--predictionsgt-pkl",r"D:\URAP_nps_val_tvd\runs\nps_val_rank_source\predictionsgt\predictionsgt_split_0_official_labels.pkl","--tracklet-jsonl",str(OUT/"val_oof_scores.jsonl"),"--per-row-score","--score-field",FIELD,"--modes","geom-mix","logit-mix","fp-suppress","replace","--alphas",".01,.02,.04,.06,.08,.1,.14,.2,.3,.4,.55,.7,1","--out-json",str(val_sweep)])
+ best=json.loads(val_sweep.read_text(encoding="utf8"))["best"]; test_fixed=OUT/"test_fixed.json"; execute("fixed_test",2,[py,str(ROOT/"tools"/"sweep_tvd_predictionsgt_score_fusion.py"),"--tvd-root",r"D:\urap_modal_stage\TransVisDrone","--predictionsgt-pkl",r"D:\URAP_vatd_rank_inputs\nps_predictionsgt_split_0.pkl","--tracklet-jsonl",str(OUT/"test_scores.jsonl"),"--per-row-score","--score-field",FIELD,"--modes",str(best["mode"]),"--alphas",str(best["alpha"]),"--out-json",str(test_fixed)])
+ test=json.loads(test_fixed.read_text(encoding="utf8"))["best"]; gain=100*(float(test["map50"])-VATD); summary={"protocol":"correct unified-label 1s/3s neighbor LambdaRank; OOF selection; fixed test","validation_selection":best,"test_fixed":test,"vatd_map50":VATD,"gain_over_vatd_points":gain,"target_3_to_5_met":3<=gain<=5}; (OUT/"official_summary.json").write_text(json.dumps(summary,indent=2),encoding="utf8"); report("done",3,summary=summary); return 0
+if __name__=="__main__": raise SystemExit(main())
+

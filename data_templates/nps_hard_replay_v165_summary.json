@@ -1,0 +1,18 @@
+{
+  "hard_clips": [
+    2,
+    9,
+    10,
+    17,
+    21,
+    22,
+    24,
+    35
+  ],
+  "hard_images": 10276,
+  "replay_target": 12000,
+  "selected_images": 21861,
+  "label_files": 12810,
+  "list": "C:\\Users\\aaron\\Desktop\\URAP\\data_templates\\nps_hard_replay_v165.txt",
+  "annotation_root": "D:\\URAP_vatd_rank_results\\tvd_detector_hard_replay_v165\\annotations"
+}

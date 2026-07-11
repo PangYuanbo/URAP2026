@@ -22,6 +22,18 @@ from utils.metrics import ap_per_class  # type: ignore
 VIDEO_STEM_RE = re.compile(r"^(?P<video>.+)_(?P<frame>\d+)$")
 
 
+def remap_stale_dataset_path(path: Path) -> Path:
+    if path.exists():
+        return path
+    text = str(path)
+    for old, new in (("D:\\URAP_datasets\\", "U:\\URAP_datasets\\"), ("D:/URAP_datasets/", "U:/URAP_datasets/")):
+        if text.startswith(old):
+            candidate = Path(new + text[len(old) :])
+            if candidate.exists():
+                return candidate
+    return path
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate saved YOLO prediction labels with YOLOMG-style AP50/F1 metrics.")
     parser.add_argument("--images-list", type=Path, required=True)
@@ -162,7 +174,7 @@ def main() -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     per_frame_dir = args.out_dir / "per_frame"
     per_frame_dir.mkdir(parents=True, exist_ok=True)
-    images = [Path(line.strip()) for line in args.images_list.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
+    images = [remap_stale_dataset_path(Path(line.strip())) for line in args.images_list.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
 
     per_video: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for image_index, image_path in enumerate(images, start=1):

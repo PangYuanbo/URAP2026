@@ -2,6 +2,25 @@
 
 Date: 2026-06-04
 
+## 2026-06-23 Update: Motion-Aware Memory Is The Main Runtime Route
+
+The current detector-first runtime direction is now SAMURAI-style motion-aware
+memory:
+
+```text
+low-threshold detector candidates
+  -> motion-memory rescoring
+  -> selective clean-memory write gate
+  -> optional memory-guided zoom re-detection
+  -> hard-reset stale-memory correction
+```
+
+Action chunks remain useful, but they should serve as an auxiliary motion
+likelihood or residual dynamics head. They should not be the only detection
+output. The detailed updated plan is:
+
+`doc/samurai_motion_memory_research_direction_2026_06_23.md`
+
 ## Goal
 
 Build a route that can exceed the current NPS / YOLOMG / TransVisDrone baselines by using motion as the recognition signal for tiny UAVs. The first target is Route B: explicit track-before-detect with an action-chunk dynamics scorer. Route A, the later target, is an implicit spatiotemporal detector trained across datasets in an Octo-style unified-data regime.

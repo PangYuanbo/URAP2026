@@ -1,0 +1,14 @@
+﻿$Root = "C:\Users\aaron\Desktop\URAP"
+$Run = Join-Path $Root "artifacts\detached_tvd_v130_v137_stack_v138"
+$PidPath = Join-Path $Run "pid.txt"
+$Progress = Join-Path $Run "progress.json"
+if (-not (Test-Path $PidPath)) { Write-Host "STATUS=NOT STARTED"; exit 1 }
+$JobPid = [int](Get-Content $PidPath)
+$Process = Get-Process -Id $JobPid -ErrorAction SilentlyContinue
+if ($Process) { Write-Host "STATUS=RUNNING" } else { Write-Host "STATUS=NOT RUNNING" }
+if (Test-Path $Progress) { $State = Get-Content $Progress -Raw | ConvertFrom-Json; Write-Host "DONE_TOTAL=$($State.done)/$($State.total) STAGE=$($State.stage) UPDATED=$($State.updated)" }
+Write-Host "PID=$JobPid START=$(Get-Content (Join-Path $Run 'start_time.txt'))"
+Write-Host "STDOUT=$(Join-Path $Run 'stdout.log')"
+Write-Host "STDERR=$(Join-Path $Run 'stderr.log')"
+if (Test-Path $Progress) { Get-Content $Progress -Raw }
+

@@ -1,0 +1,17 @@
+path: D:/URAP_datasets/TransVisDrone/NPS/AllFrames
+train: C:/Users/aaron/Desktop/URAP/data_templates/nps_hard_replay_v165.txt
+val: val
+test: test
+inference: val
+annotation_path: ""
+annotation_train: D:/URAP_vatd_rank_results/tvd_detector_hard_replay_v165/annotations/train/labels
+annotation_val: D:/URAP_datasets/TransVisDrone/NPS/NPSvisdroneStyle/val/labels
+annotation_test: D:/URAP_datasets/TransVisDrone/NPS/NPSvisdroneStyle/test/labels
+video_root_path: D:/URAP_datasets/TransVisDrone/NPS/Videos
+video_root_path_train: train
+video_root_path_val: val
+video_root_path_test: test
+video_root_path_inference: val
+nc: 1
+names: ['drone']
+

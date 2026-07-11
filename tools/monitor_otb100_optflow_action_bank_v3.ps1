@@ -1,0 +1,22 @@
+param([string]$RepoRoot='C:\Users\aaron\Desktop\URAP',[string]$RunId='otb100_samurai_optflow_action_bank_v3')
+$root=Join-Path $RepoRoot 'artifacts\detached_otb100_samurai_optflow_action_bank_v3'
+$pidFile=Join-Path $root ($RunId+'.pid');$metaFile=Join-Path $root ($RunId+'.meta.json')
+$pidValue=if(Test-Path $pidFile){[int](Get-Content $pidFile|Select-Object -First 1)}else{0}
+$process=if($pidValue){Get-CimInstance Win32_Process -Filter "ProcessId=$pidValue" -ErrorAction SilentlyContinue}else{$null}
+if($process -and $process.CommandLine -notlike '*postprocess_otb100_action_bank_cmc.py*'){$process=$null}
+$meta=if(Test-Path $metaFile){Get-Content $metaFile -Raw|ConvertFrom-Json}else{$null}
+$progress=if($meta -and (Test-Path $meta.progress)){Get-Content $meta.progress -Raw|ConvertFrom-Json}else{$null}
+$paths=if($meta){@($meta.stdout,$meta.stderr,$meta.progress)|Where-Object{Test-Path $_}}else{@()}
+$latest=$paths|ForEach-Object{Get-Item $_}|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+Write-Output "status: $(if($process){'RUNNING'}else{'NOT RUNNING'})"
+Write-Output "done/total: $(if($progress){$progress.done.ToString()+'/'+$progress.total}else{'0/100'})"
+Write-Output "stage: $(if($progress){$progress.stage}else{'not_started'})"
+Write-Output "pid: $pidValue"
+Write-Output "start_time: $(if($meta){$meta.started}else{'unknown'})"
+if($process){Write-Output "command: $($process.CommandLine)"}
+Write-Output "last_output_timestamp: $(if($latest){$latest.LastWriteTime}else{'none'})"
+Write-Output "last_completed_unit: $(if($progress){$progress|ConvertTo-Json -Compress}else{'none'})"
+Write-Output "gpu_signal: CPU-ONLY"
+Write-Output "stdout: $($meta.stdout)"
+Write-Output "stderr: $($meta.stderr)"
+Write-Output "progress: $($meta.progress)"

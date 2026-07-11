@@ -1,0 +1,10 @@
+$ErrorActionPreference = 'SilentlyContinue'
+$Repo = 'C:\Users\aaron\Desktop\URAP'; $Run = Join-Path $Repo 'artifacts\detached_tvd_v165_action_transfer_v166'
+$PidFile = Join-Path $Run 'pid.txt'; $MetaFile = Join-Path $Run 'meta.json'; $ProgressFile = Join-Path $Run 'progress.json'
+$Summary = 'D:\URAP_vatd_rank_results\tvd_v165_action_transfer_v166\official_summary.json'
+if (!(Test-Path $PidFile)) { Write-Output 'NOT RUNNING: PID file missing'; exit 1 }
+$JobPid = [int](Get-Content $PidFile -Raw).Trim(); $Process = Get-CimInstance Win32_Process -Filter "ProcessId=$JobPid"
+if ($Process) { Write-Output "RUNNING PID: $JobPid"; Write-Output "Command: $($Process.CommandLine)" } else { Write-Output "NOT RUNNING PID: $JobPid" }
+if (Test-Path $MetaFile) { $Meta=Get-Content $MetaFile -Raw|ConvertFrom-Json; Write-Output "Start time: $($Meta.start_time)"; Write-Output "Stdout log: $($Meta.stdout_log)"; Write-Output "Stderr log: $($Meta.stderr_log)" }
+if (Test-Path $ProgressFile) { $Progress=Get-Content $ProgressFile -Raw|ConvertFrom-Json; Write-Output "Progress: $($Progress.done)/$($Progress.total)"; Write-Output "Stage: $($Progress.stage)"; Write-Output "Last output: $($Progress.updated)"; if($Progress.error){Write-Output "Error: $($Progress.error)"} } else { Write-Output 'Progress: 0/3' }
+if (Test-Path $Summary) { $Result=Get-Content $Summary -Raw|ConvertFrom-Json; Write-Output "Test mAP@0.5: $($Result.test_fixed.map50)"; Write-Output "Action gain over V165: $($Result.action_gain_over_v165_points) points"; Write-Output "Gain over VATD: $($Result.gain_over_vatd_points) points"; Write-Output "Target met: $($Result.target_at_least_3_met)" }

@@ -61,5 +61,11 @@ doc/scans.json
 
 # Local research scratch workspace
 autoresearch/
+tmp/
+
+# Local third-party checkouts and dataset junctions
+third_party/
+data_templates/nps_hard_annotations_v104/
 
 .DS_Store
+

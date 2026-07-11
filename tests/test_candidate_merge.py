@@ -24,6 +24,19 @@ def test_merge_keeps_sources():
     assert "motion" in merged[0].source and "tracker" in merged[0].source
 
 
+def test_merge_preserves_best_detector_evidence_when_support_scores_higher():
+    support = DetectionCandidate((0, 0, 10, 10), 0.9, "gray_ncc", extra={"raw_objectness": 0.34})
+    detector = DetectionCandidate((1, 1, 11, 11), 0.4, "yolov5_dual", extra={"raw_objectness": 0.82})
+
+    merged = merge_candidates([support, detector])
+
+    assert len(merged) == 1
+    assert merged[0].extra["has_detector_member"] is True
+    assert merged[0].extra["detector_raw_objectness"] == 0.82
+    assert merged[0].extra["detector_bbox_xyxy"] == [1.0, 1.0, 11.0, 11.0]
+    assert merged[0].extra["detector_source"] == "yolov5_dual"
+
+
 def test_fallback_trigger_and_source_priority_budget():
     weak_primary = [DetectionCandidate((0, 0, 4, 4), 0.12, "yolo_tile")]
     strong_primary = [DetectionCandidate((0, 0, 4, 4), 0.35, "yolo_tile")]

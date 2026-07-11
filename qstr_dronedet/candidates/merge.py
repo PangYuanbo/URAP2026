@@ -7,6 +7,19 @@ import numpy as np
 from qstr_dronedet.types import DetectionCandidate
 
 
+def _source_parts(source: str) -> set[str]:
+    return {part for part in str(source).split("+") if part}
+
+
+def _is_detector_source(source: str) -> bool:
+    parts = _source_parts(source)
+    return any(part in {"yolo", "yolo_tile", "yolov5_dual", "zoom_redetect", "crop_yolo"} or part.startswith("yolo") for part in parts)
+
+
+def _raw_objectness(candidate: DetectionCandidate) -> float:
+    return float(candidate.extra.get("raw_objectness", candidate.objectness))
+
+
 def bbox_iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
@@ -52,8 +65,21 @@ def merge_candidates(candidates: list[DetectionCandidate], iou_threshold: float 
         boxes = np.array([g.bbox_xyxy for g in group], dtype=np.float32)
         box = tuple((boxes * weights[:, None]).sum(axis=0) / weights.sum())
         best = max(group, key=lambda g: g.objectness)
+        detector_members = [g for g in group if _is_detector_source(g.source)]
+        best_detector = max(detector_members, key=lambda g: (_raw_objectness(g), float(g.objectness))) if detector_members else None
         sources = sorted({g.source for g in group})
         extra = {"merged_sources": sources, "num_merged": len(group), **best.extra}
+        if best_detector is not None:
+            extra.update(
+                {
+                    "has_detector_member": True,
+                    "detector_raw_objectness": _raw_objectness(best_detector),
+                    "detector_bbox_xyxy": [float(v) for v in best_detector.bbox_xyxy],
+                    "detector_source": best_detector.source,
+                }
+            )
+        else:
+            extra["has_detector_member"] = False
         track_member = next((g for g in group if "tracker" in g.source), None)
         if track_member is not None:
             for key, value in track_member.extra.items():

@@ -1,0 +1,15 @@
+from __future__ import annotations
+import json,os,subprocess,sys
+from datetime import datetime
+from pathlib import Path
+REPO=Path(r'C:\Users\aaron\Desktop\URAP');RUN=REPO/'artifacts'/'detached_action_chunk_persistent_rank_v57';PROGRESS=RUN/'progress.json';OUT=Path(r'D:\URAP_vatd_rank_results\action_chunk_persistent_rank_v57');SOURCE=Path(r'D:\URAP_vatd_rank_results\action_chunk_persistent_model_v55');TOTAL=5
+def report(stage,done,**extra):RUN.mkdir(parents=True,exist_ok=True);PROGRESS.write_text(json.dumps({'stage':stage,'done':done,'total':TOTAL,'updated':datetime.now().astimezone().isoformat(),**extra}),encoding='utf8')
+def execute(stage,done,command):
+ process=subprocess.Popen(command,cwd=REPO,env={**os.environ,'PYTHONPATH':str(REPO)+os.pathsep+str(REPO/'tools'),'PYTHONUNBUFFERED':'1'});report(stage,done,child_pid=process.pid,command=command);code=process.wait()
+ if code:raise RuntimeError(f'{stage} failed with {code}')
+def main():
+ OUT.mkdir(parents=True,exist_ok=True);base='action_chunk_neighbor_score';execute('normalize_val_frame',0,[sys.executable,str(REPO/'tools'/'normalize_action_chunk_scores.py'),'--input',str(SOURCE/'val_oof_scores.jsonl'),'--field',base,'--output',str(OUT/'val_normalized.jsonl')]);execute('normalize_test_frame',1,[sys.executable,str(REPO/'tools'/'normalize_action_chunk_scores.py'),'--input',str(SOURCE/'test_scores.jsonl'),'--field',base,'--output',str(OUT/'test_normalized.jsonl')]);best=None
+ for offset,suffix in enumerate(('frame_rank','frame_z')):
+  field=f'{base}_{suffix}';result=OUT/f'val_{suffix}.json';execute(f'select_{suffix}',2+offset,[sys.executable,str(REPO/'tools'/'sweep_tvd_predictionsgt_score_fusion.py'),'--tvd-root',r'D:\urap_modal_stage\TransVisDrone','--predictionsgt-pkl',r'D:\URAP_nps_val_tvd\runs\nps_val_rank_source\predictionsgt\predictionsgt_split_0_official_labels.pkl','--tracklet-jsonl',str(OUT/'val_normalized.jsonl'),'--per-row-score','--score-field',field,'--modes','geom-mix','linear-mix','--alphas','.005,.01,.02,.04,.06,.08,.1,.14,.2,.3,.4','--out-json',str(result)]);candidate=json.loads(result.read_text(encoding='utf8'))['best']|{'field':field};best=candidate if best is None or candidate['map50']>best['map50'] else best
+ execute('fixed_test',4,[sys.executable,str(REPO/'tools'/'sweep_tvd_predictionsgt_score_fusion.py'),'--tvd-root',r'D:\urap_modal_stage\TransVisDrone','--predictionsgt-pkl',r'D:\URAP_vatd_rank_inputs\nps_predictionsgt_split_0.pkl','--tracklet-jsonl',str(OUT/'test_normalized.jsonl'),'--per-row-score','--score-field',best['field'],'--modes',best['mode'],'--alphas',str(best['alpha']),'--out-json',str(OUT/'test_fixed.json')]);test=json.loads((OUT/'test_fixed.json').read_text(encoding='utf8'))['best'];summary={'protocol':'causal current-frame rank calibration of persistent Action Chunk score; validation selection; fixed test','validation_selection':best,'test_fixed':test,'target_map50':.97,'target_met':test['map50']>=.97};(OUT/'official_summary.json').write_text(json.dumps(summary,indent=2),encoding='utf8');report('done',5,summary=summary);return 0
+if __name__=='__main__':raise SystemExit(main())

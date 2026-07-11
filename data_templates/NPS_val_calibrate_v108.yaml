@@ -1,0 +1,16 @@
+path: D:/URAP_datasets/TransVisDrone/NPS/AllFrames
+train: val
+val: val
+test: test
+inference: val
+annotation_path: D:/URAP_datasets/TransVisDrone/NPS/NPSvisdroneStyle
+annotation_train: val/labels
+annotation_val: val/labels
+annotation_test: test/labels
+video_root_path: D:/URAP_datasets/TransVisDrone/NPS/Videos
+video_root_path_train: val
+video_root_path_val: val
+video_root_path_test: test
+video_root_path_inference: val
+nc: 1
+names: ['drone']

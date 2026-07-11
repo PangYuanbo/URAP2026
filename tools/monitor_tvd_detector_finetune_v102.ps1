@@ -1,0 +1,6 @@
+$ErrorActionPreference='Stop'
+$Run='C:\Users\aaron\Desktop\URAP\artifacts\detached_tvd_detector_finetune_v102';$Project='D:\URAP_vatd_rank_results\tvd_detector_finetune_v102\finetune_lowaug_e8';$PidFile=Join-Path $Run 'pid.txt';$Meta=Get-Content (Join-Path $Run 'start_meta.json') -Raw|ConvertFrom-Json;$JobPid=[int](Get-Content $PidFile -Raw).Trim();$Process=Get-CimInstance Win32_Process -Filter "ProcessId=$JobPid" -ErrorAction SilentlyContinue
+if($Process){Write-Output "RUNNING PID=$JobPid START=$($Meta.start_time)";Write-Output "COMMAND=$($Process.CommandLine)"}else{Write-Output "NOT RUNNING PID=$JobPid START=$($Meta.start_time)"}
+$Results=Join-Path $Project 'results.csv';if(Test-Path $Results){$Lines=Get-Content $Results;$Done=[Math]::Max(0,$Lines.Count-1);Write-Output "PROGRESS=$Done/8 LAST_OUTPUT=$((Get-Item $Results).LastWriteTime.ToString('o'))";Get-Content $Results -Tail 3}else{Write-Output 'PROGRESS=0/8 RESULTS_NOT_CREATED'}
+foreach($Name in @('stdout.log','stderr.log')){$Log=Join-Path $Run $Name;if(Test-Path $Log){$Item=Get-Item $Log;Write-Output "LOG=$Log LAST_WRITE=$($Item.LastWriteTime.ToString('o')) BYTES=$($Item.Length)";Get-Content $Log -Tail 12}}
+& nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits

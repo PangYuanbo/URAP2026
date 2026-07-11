@@ -18,11 +18,14 @@ Use `review.html` to inspect interpolated boxes one frame at a time.
 ## Use
 
 1. Open `annotator.html` in Chrome, Edge, or Safari.
-2. Choose the video file.
+2. Choose the RGB video and its frame-aligned optical-flow video.
 3. Set `step` to `5`.
 4. If assigning work, set `start frame`, `end frame`, and `annotator`.
-5. Drag a box around the target. The tool auto-advances to the next target frame.
-6. Click `Export JSON` when done.
+5. Use the default dual view to find the drone in optical flow, then draw the box on RGB.
+6. Use `Enlarge RGB`, `Enlarge Flow`, or `Zoom Out / Dual View` (`1`, `2`, or `0`) to change the layout.
+7. Click `Export JSON` when done.
+
+RGB and optical-flow videos must use the same FPS, frame count, and frame alignment. Boxes are always stored in RGB coordinates; the optical-flow view is read-only.
 
 The browser cannot silently save to the repository or Google Drive. Each annotator should export JSON and send it back.
 

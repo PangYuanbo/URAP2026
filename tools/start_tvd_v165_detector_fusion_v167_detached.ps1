@@ -1,0 +1,9 @@
+$ErrorActionPreference = 'Stop'
+$Repo = 'C:\Users\aaron\Desktop\URAP'; $Run = Join-Path $Repo 'artifacts\detached_tvd_v165_detector_fusion_v167'
+$Python = Join-Path $Repo 'URAP-UAV-to-UAV-Detection-and-Tracking\papers\YOLOMG\.venv\Scripts\python.exe'; $Script = Join-Path $Repo 'tools\run_tvd_v165_detector_fusion_v167.py'
+New-Item -ItemType Directory -Force -Path $Run | Out-Null; $PidFile = Join-Path $Run 'pid.txt'
+if(Test-Path $PidFile){$OldPid=[int](Get-Content $PidFile -Raw).Trim();$Old=Get-CimInstance Win32_Process -Filter "ProcessId=$OldPid" -ErrorAction SilentlyContinue;if($Old -and $Old.CommandLine -like '*run_tvd_v165_detector_fusion_v167.py*'){Write-Output "ALREADY RUNNING PID=$OldPid";exit 0}}
+$Stdout=Join-Path $Run 'stdout.log';$Stderr=Join-Path $Run 'stderr.log';Set-Content -LiteralPath $Stdout -Value '';Set-Content -LiteralPath $Stderr -Value '';$Started=Get-Date
+$Process=Start-Process -FilePath $Python -ArgumentList @($Script) -WorkingDirectory $Repo -RedirectStandardOutput $Stdout -RedirectStandardError $Stderr -WindowStyle Hidden -PassThru
+$Process.Id|Set-Content -LiteralPath $PidFile -Encoding ASCII;@{pid=$Process.Id;start_time=$Started.ToString('o');command_line="$Python $Script";stdout_log=$Stdout;stderr_log=$Stderr}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $Run 'meta.json') -Encoding UTF8
+Write-Output "STARTED PID=$($Process.Id) START=$($Started.ToString('o'))"

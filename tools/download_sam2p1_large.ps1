@@ -1,0 +1,2 @@
+param([string]$Destination='C:\Users\aaron\Desktop\URAP\third_party\samurai\sam2\checkpoints\sam2.1_hiera_large.pt')
+$ErrorActionPreference='Stop';$url='https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt';$partial=$Destination+'.partial';& curl.exe -L --fail --retry 5 --retry-delay 5 -o $partial $url;if($LASTEXITCODE -ne 0){exit $LASTEXITCODE};Move-Item -LiteralPath $partial -Destination $Destination -Force;Write-Output "completed destination=$Destination bytes=$((Get-Item -LiteralPath $Destination).Length)"

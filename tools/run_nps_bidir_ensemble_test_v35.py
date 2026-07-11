@@ -1,0 +1,14 @@
+from __future__ import annotations
+import json,os,subprocess,sys,time
+from datetime import datetime,timezone
+from pathlib import Path
+REPO=Path(r'C:\Users\aaron\Desktop\URAP');PYTHON=Path(sys.executable);RUN=REPO/'artifacts'/'detached_nps_bidir_ensemble_test_v35';PROGRESS=RUN/'progress.json';OUT=Path(r'D:\URAP_vatd_rank_results\nps_bidir_ensemble_test_v35');PREREQ=Path(r'D:\URAP_vatd_rank_results\nps_reverse_action_bank_test_v34\test_reverse_summary.json')
+def report(stage,done,**extra):RUN.mkdir(parents=True,exist_ok=True);p={'stage':stage,'done':done,'total':2,'updated':datetime.now(timezone.utc).astimezone().isoformat(),**extra};PROGRESS.write_text(json.dumps(p,indent=2),encoding='utf-8');print(json.dumps(p),flush=True)
+def execute(stage,done,cmd):
+ p=subprocess.Popen(cmd,cwd=REPO,env={**os.environ,'PYTHONPATH':str(REPO)+os.pathsep+str(REPO/'tools'),'PYTHONUNBUFFERED':'1'});report(stage,done,child_pid=p.pid,command=cmd);code=p.wait()
+ if code:raise subprocess.CalledProcessError(code,cmd)
+def main():
+ OUT.mkdir(parents=True,exist_ok=True)
+ while not PREREQ.is_file():report('waiting_for_reverse_test',0,prerequisite=str(PREREQ));time.sleep(30)
+ execute('train_predict_ensemble',0,[str(PYTHON),str(REPO/'tools'/'train_bidir_action_bank_ensemble.py'),'--dev-pkl',r'D:\URAP_nps_val_tvd\runs\nps_val_rank_source\predictionsgt\predictionsgt_split_0_official_labels.pkl','--dev-forward',r'D:\URAP_vatd_rank_results\nps_online_action_bank_v14\val_scores.jsonl','--dev-backward',r'D:\URAP_vatd_rank_results\nps_reverse_action_bank_val_v29\val_reverse_scores.jsonl','--test-pkl',r'D:\URAP_vatd_rank_inputs\nps_predictionsgt_split_0.pkl','--test-forward',r'D:\URAP_vatd_rank_results\nps_online_action_bank_v14\test_scores.jsonl','--test-backward',r'D:\URAP_vatd_rank_results\nps_reverse_action_bank_test_v34\test_reverse_scores.jsonl','--out-scores',str(OUT/'test_scores.jsonl'),'--out-model-dir',str(OUT/'models'),'--out-summary',str(OUT/'train_summary.json')]);execute('fixed_test',1,[str(PYTHON),str(REPO/'tools'/'sweep_tvd_predictionsgt_score_fusion.py'),'--tvd-root',r'D:\urap_modal_stage\TransVisDrone','--predictionsgt-pkl',r'D:\URAP_vatd_rank_inputs\nps_predictionsgt_split_0.pkl','--tracklet-jsonl',str(OUT/'test_scores.jsonl'),'--per-row-score','--score-field','bidir_ensemble_score','--modes','geom-mix','--alphas','.2','--out-json',str(OUT/'test_fixed.json')]);test=json.loads((OUT/'test_fixed.json').read_text(encoding='utf-8'))['best'];summary={'protocol':'4-fold OOF model/fusion selection on Clips37-40; fixed ensemble test Clips41-50','test_fixed':test,'target_map50':.97,'target_met':test['map50']>=.97};(OUT/'official_summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8');report('done',2,summary=summary);return 0
+if __name__=='__main__':raise SystemExit(main())

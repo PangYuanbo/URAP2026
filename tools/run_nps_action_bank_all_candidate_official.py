@@ -1,0 +1,20 @@
+﻿from __future__ import annotations
+import json,os,subprocess,sys
+from datetime import datetime,timezone
+from pathlib import Path
+R=Path(r'C:\Users\aaron\Desktop\URAP');P=Path(sys.executable);TVD=Path(r'D:\urap_modal_stage\TransVisDrone');V2=Path(r'D:\URAP_vatd_rank_results\nps_action_bank_cmc_v2');V3=Path(r'D:\URAP_vatd_rank_results\nps_action_bank_listwise_v3');OUT=Path(r'D:\URAP_vatd_rank_results\nps_action_bank_all_candidate_v4');RUN=R/'artifacts/detached_nps_action_bank_all_candidate_v4';PROG=RUN/'progress.json';MARK=RUN/'stage_markers';TOTAL=3
+TRAIN_PKL=Path(r'D:\URAP_nps_train_tvd\runs\nps_train_rank_source\predictionsgt\predictionsgt_split_0.pkl');VAL_PKL=Path(r'D:\URAP_nps_val_tvd\runs\nps_val_rank_source\predictionsgt\predictionsgt_split_0_official_labels.pkl');TEST_PKL=Path(r'D:\URAP_vatd_rank_inputs\nps_predictionsgt_split_0.pkl')
+def progress(stage,done,**extra):RUN.mkdir(parents=True,exist_ok=True);PROG.write_text(json.dumps({'stage':stage,'done':done,'total':TOTAL,'updated':datetime.now(timezone.utc).astimezone().isoformat(),**extra},indent=2))
+def run(command,stage,done):
+ marker=MARK/f'{done+1:02d}_{stage}.json'
+ if marker.is_file():progress(stage+'_already_done',done+1,marker=str(marker));return
+ print(json.dumps({'kind':'all_candidate_command','stage':stage,'command':command}),flush=True);p=subprocess.Popen(command,cwd=R,env={**os.environ,'PYTHONUNBUFFERED':'1','PYTHONPATH':str(R)});progress(stage,done,child_pid=p.pid,command=command);code=p.wait()
+ if code:raise subprocess.CalledProcessError(code,command)
+ MARK.mkdir(parents=True,exist_ok=True);marker.write_text(json.dumps({'stage':stage,'completed':datetime.now(timezone.utc).astimezone().isoformat()},indent=2));progress(stage+'_done',done+1,marker=str(marker))
+def main():
+ OUT.mkdir(parents=True,exist_ok=True);val_scores=OUT/'val_scores.jsonl';test_scores=OUT/'test_scores.jsonl';val_sweep=OUT/'val_fusion_sweep.json';test_eval=OUT/'test_fixed_fusion.json'
+ run([str(P),str(R/'tools/train_action_bank_all_candidate_listwise.py'),'--train-pkl',str(TRAIN_PKL),'--train-aux-tracklets',str(V3/'train_tracklets_action_bank.jsonl'),'--val-pkl',str(VAL_PKL),'--val-aux-tracklets',str(V2/'val_tracklets_action_bank.jsonl'),'--test-pkl',str(TEST_PKL),'--test-aux-tracklets',str(V2/'test_tracklets_action_bank.jsonl'),'--out-val-scores',str(val_scores),'--out-test-scores',str(test_scores),'--out-model',str(OUT/'model.pt'),'--out-summary',str(OUT/'train_summary.json'),'--epochs','12','--frame-batch-size','192','--inference-batch-size','16384','--hidden','192','--lr','0.0005'],'train_all_candidate_selector',0)
+ run([str(P),str(R/'tools/sweep_tvd_predictionsgt_score_fusion.py'),'--tvd-root',str(TVD),'--predictionsgt-pkl',str(VAL_PKL),'--tracklet-jsonl',str(val_scores),'--score-field','action_bank_all_candidate_score','--per-row-score','--modes','replace','linear-mix','logit-mix','geom-mix','fp-suppress','tp-boost','--alphas','0.001 0.002 0.005 0.01 0.02 0.04 0.06 0.08 0.10 0.14 0.20 0.30 0.40 0.55 0.70 0.85 1.0','--out-json',str(val_sweep),'--write-best-pkl',str(OUT/'val_best.pkl')],'select_on_validation',1)
+ best=json.loads(val_sweep.read_text())['best'];run([str(P),str(R/'tools/sweep_tvd_predictionsgt_score_fusion.py'),'--tvd-root',str(TVD),'--predictionsgt-pkl',str(TEST_PKL),'--tracklet-jsonl',str(test_scores),'--score-field','action_bank_all_candidate_score','--per-row-score','--modes',str(best['mode']),'--alphas',str(best['alpha']),'--out-json',str(test_eval),'--write-best-pkl',str(OUT/'test_fixed_best.pkl')],'evaluate_test_fixed',2)
+ test=json.loads(test_eval.read_text())['best'];summary={'protocol':'train Clips1-36; select Clips37-40; fixed test Clips41-50','selector':'predictionsgt-native all-candidate causal listwise Action Bank','validation_best':best,'test_fixed':test,'target_map50':.97,'target_met':float(test['map50'])>=.97,'candidate_oracle_map50':.9920831168831169};(OUT/'official_summary.json').write_text(json.dumps(summary,indent=2));progress('done',TOTAL,summary=summary);print(json.dumps({'kind':'all_candidate_official_done',**summary},indent=2),flush=True);return 0
+if __name__=='__main__':raise SystemExit(main())
