@@ -1,0 +1,4 @@
+-r requirements-classical.txt
+torch>=2.1
+torchvision>=0.16
+huggingface-hub>=0.20

@@ -1,0 +1,14 @@
+{
+  "local_grid_cols": 36,
+  "local_grid_rows": 21,
+  "local_neighbors": 18,
+  "local_radius": 190.0,
+  "local_max_shift": 18.0,
+  "local_apply_threshold": 0.18,
+  "track_scale": 0.5,
+  "adaptive_strength": 1.2,
+  "residual_floor": 2.0,
+  "residual_gain": 1.2,
+  "color_floor": 32.0,
+  "color_gamma": 0.72
+}

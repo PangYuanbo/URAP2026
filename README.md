@@ -11,6 +11,7 @@ This repository intentionally tracks:
 - empty data templates in `data_templates/`
 - experiment and reproduction notes in `doc/`
 - project reports in `reports/`
+- advanced optical-flow package in `optical_flow_advanced/`
 - Windows/PowerShell and Python runner scripts in `tools/`
 - repository operating rules in `AGENTS.md`
 
@@ -30,6 +31,7 @@ tests/              Synthetic tests and CLI smoke tests
 data_templates/     CSV templates for real video recording and annotation
 doc/                Reproduction notes and experimental logs
 reports/            Professor-facing summaries and paper/dataset notes
+optical_flow_advanced/  Unified motion-compensation methods and documentation
 tools/              PowerShell/Python runners for repeatable experiments
 ```
 
@@ -61,6 +63,8 @@ The current QSTR experiment line combines:
 Useful entry points:
 
 - `python -m qstr_dronedet.cli --help`
+- `python optical_flow_advanced/run.py list`
+- advanced optical-flow guide: `optical_flow_advanced/README.md`
 - annotation web/API deployment: `doc/annotation_monorepo_deployment.md`
 - `tools/run_qstr_stable_profile.ps1`
 - `tools/run_qstr_hard_recovery_profile.ps1`
